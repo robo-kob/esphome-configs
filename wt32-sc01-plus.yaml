@@ -419,7 +419,7 @@ lvgl:
                     then:
                       - lvgl.label.update:
                           id: lbl_mute
-                          text: !lambda return std::string(LV_SYMBOL_MUTE);
+                          text: "MUTE"
                           text_color: 0xFF4444
                     else:
                       - lvgl.label.update:
