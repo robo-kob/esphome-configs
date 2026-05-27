@@ -7,6 +7,8 @@ triggers:
     at: "12:00:00"
   - trigger: time
     at: "18:00:00"
+  - trigger: homeassistant
+    event: start
 conditions: []
 actions:
   - action: calendar.get_events
@@ -48,11 +50,11 @@ actions:
         {% else %}06:00 (morgen)
         {% endif %}
       wetter_text: |-
-        {% set forecast = wetter['weather.forecast_home'].forecast %}
-        {% if forecast | count > 0 %}
-          {% set heute = forecast[0] %}
-          {% set zustand = heute.condition %}
-          {% set zustand_de = {
+        {%- set forecast = wetter['weather.forecast_home'].forecast -%}
+        {%- if forecast | count > 0 -%}
+          {%- set heute = forecast[0] -%}
+          {%- set zustand = heute.condition -%}
+          {%- set zustand_de = {
             'sunny': 'sonnig',
             'clear-night': 'klar',
             'partlycloudy': 'leicht bewölkt',
@@ -68,13 +70,13 @@ actions:
             'lightning': 'Gewitter',
             'lightning-rainy': 'Gewitter+Regen',
             'exceptional': 'außergewöhnlich'
-          } %}
-          {% set tmin = heute.templow | round(0) | int %}
-          {% set tmax = heute.temperature | round(0) | int %}
-          {{ tmin }}°-{{ tmax }}°C  {{ zustand_de.get(zustand, zustand) }}
-        {% else %}
+          } -%}
+          {%- set tmin = heute.templow | round(0) | int -%}
+          {%- set tmax = heute.temperature | round(0) | int -%}
+          {{- tmin }}°-{{ tmax }}°C  {{ zustand_de.get(zustand, zustand) }}
+        {%- else -%}
           Keine Wetterdaten
-        {% endif %}
+        {%- endif -%}
   - variables:
       alle_lines: |-
         {% set ns = namespace(lines=[]) %}
