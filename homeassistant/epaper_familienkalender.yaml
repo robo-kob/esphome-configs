@@ -17,7 +17,7 @@ actions:
         - calendar.ferien_hessen
         - calendar.elw_abfallkalender
     data:
-      start_date_time: "{{ now().isoformat() }}"
+      start_date_time: "{{ today_at('00:00').isoformat() }}"
       end_date_time: "{{ (now() + timedelta(days=3)).isoformat() }}"
     response_variable: kalender
   - action: weather.get_forecasts
