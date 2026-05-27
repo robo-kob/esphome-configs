@@ -32,7 +32,7 @@ esphome:
             text: !lambda return std::string(LV_SYMBOL_AUDIO);
         - lvgl.label.update:
             id: lbl_mute
-            text: !lambda return std::string(LV_SYMBOL_VOLUME_MAX);
+            text: "Mute"
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -424,13 +424,12 @@ lvgl:
                     else:
                       - lvgl.label.update:
                           id: lbl_mute
-                          text: !lambda return std::string(LV_SYMBOL_VOLUME_MAX);
+                          text: "Mute"
                           text_color: 0xFFFFFF
             widgets:
               - label:
                   id: lbl_mute
-                  text: "M"
-                  text_font: montserrat_20
+                  text: "Mute"
                   align: center
 
         # Input Button oben rechts
