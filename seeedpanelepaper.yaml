@@ -1,0 +1,263 @@
+esphome:
+  name: seeedpanelepaper
+  friendly_name: seeedPanelEpaper
+  on_boot:
+    priority: -100
+    then:
+      - component.update: epaper_display
+
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: arduino
+
+logger:
+
+api:
+  encryption:
+    key: "7jTk+KM9Tydfx184svnE+A2vr9kOzTl5Ii0cc1r6oMw="
+
+ota:
+  - platform: esphome
+    password: "c62e2d4d0c6392c9065512f7e5c48be0"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "Seeedpanelepaper"
+    password: "afoXXncwtW80"
+
+captive_portal:
+
+time:
+  - platform: homeassistant
+    id: ha_time
+
+font:
+  - file: "gfonts://Roboto@700"
+    id: font_title
+    size: 28
+  - file: "gfonts://Roboto@700"
+    id: font_large
+    size: 44
+  - file: "gfonts://Roboto@400"
+    id: font_medium
+    size: 22
+  - file: "gfonts://Roboto@400"
+    id: font_small
+    size: 17
+
+text_sensor:
+  - platform: homeassistant
+    id: outdoor_temp
+    entity_id: sensor.gw1100a_outdoor_temperature
+  - platform: homeassistant
+    id: uv_index
+    entity_id: sensor.gw1100a_uv_index
+  - platform: homeassistant
+    id: outdoor_humidity
+    entity_id: sensor.gw1100a_humidity
+
+  - platform: homeassistant
+    id: d1_date
+    entity_id: sensor.epaper_forecast_day1_date
+  - platform: homeassistant
+    id: d1_condition
+    entity_id: sensor.epaper_forecast_day1_condition
+  - platform: homeassistant
+    id: d1_temphigh
+    entity_id: sensor.epaper_forecast_day1_temphigh
+  - platform: homeassistant
+    id: d1_templow
+    entity_id: sensor.epaper_forecast_day1_templow
+  - platform: homeassistant
+    id: d1_precip
+    entity_id: sensor.epaper_forecast_day1_precipitation
+
+  - platform: homeassistant
+    id: d2_date
+    entity_id: sensor.epaper_forecast_day2_date
+  - platform: homeassistant
+    id: d2_condition
+    entity_id: sensor.epaper_forecast_day2_condition
+  - platform: homeassistant
+    id: d2_temphigh
+    entity_id: sensor.epaper_forecast_day2_temphigh
+  - platform: homeassistant
+    id: d2_templow
+    entity_id: sensor.epaper_forecast_day2_templow
+  - platform: homeassistant
+    id: d2_precip
+    entity_id: sensor.epaper_forecast_day2_precipitation
+
+  - platform: homeassistant
+    id: d3_date
+    entity_id: sensor.epaper_forecast_day3_date
+  - platform: homeassistant
+    id: d3_condition
+    entity_id: sensor.epaper_forecast_day3_condition
+  - platform: homeassistant
+    id: d3_temphigh
+    entity_id: sensor.epaper_forecast_day3_temphigh
+  - platform: homeassistant
+    id: d3_templow
+    entity_id: sensor.epaper_forecast_day3_templow
+  - platform: homeassistant
+    id: d3_precip
+    entity_id: sensor.epaper_forecast_day3_precipitation
+
+spi:
+  clk_pin: GPIO8
+  mosi_pin: GPIO10
+
+display:
+  - platform: waveshare_epaper
+    id: epaper_display
+    cs_pin: GPIO3
+    dc_pin: GPIO5
+    busy_pin:
+      number: GPIO4
+      inverted: true
+    reset_pin: GPIO2
+    model: 7.50inv2
+    update_interval: 600s
+    lambda: |-
+      it.fill(COLOR_OFF);
+
+      auto cond_de = [](const std::string& c) -> std::string {
+        if (c == "sunny")            return "Sonnig";
+        if (c == "clear-night")      return "Klare Nacht";
+        if (c == "partlycloudy")     return "Teils bewoelkt";
+        if (c == "cloudy")           return "Bewoelkt";
+        if (c == "fog")              return "Nebel";
+        if (c == "rainy")            return "Regen";
+        if (c == "pouring")          return "Starkregen";
+        if (c == "snowy")            return "Schnee";
+        if (c == "snowy-rainy")      return "Schneeregen";
+        if (c == "hail")             return "Hagel";
+        if (c == "lightning")        return "Gewitter";
+        if (c == "lightning-rainy")  return "Gew. m. Regen";
+        if (c == "windy")            return "Windig";
+        if (c == "windy-variant")    return "Windig/bewoelkt";
+        if (c == "exceptional")      return "Unwetter";
+        return c;
+      };
+
+      // =============================================
+      // LINKE SEITE: 0–309 (310px breit)
+      // =============================================
+
+      // Datum & Uhrzeit
+      it.strftime(155, 12, id(font_title), TextAlign::TOP_CENTER,
+        "%d.%m.%Y", id(ha_time).now());
+      it.strftime(155, 48, id(font_medium), TextAlign::TOP_CENTER,
+        "%H:%M Uhr", id(ha_time).now());
+
+      it.line(10, 82, 300, 82);
+
+      // Außentemperatur
+      it.print(10, 92, id(font_medium), TextAlign::TOP_LEFT,
+        "Aussentemperatur");
+      it.printf(10, 122, id(font_large), TextAlign::TOP_LEFT,
+        "%s \xc2\xb0C",
+        id(outdoor_temp).has_state() ? id(outdoor_temp).state.c_str() : "--");
+
+      it.line(10, 180, 300, 180);
+
+      // UV-Index
+      it.print(10, 190, id(font_medium), TextAlign::TOP_LEFT,
+        "UV-Index");
+      it.printf(10, 220, id(font_large), TextAlign::TOP_LEFT,
+        "%s",
+        id(uv_index).has_state() ? id(uv_index).state.c_str() : "--");
+
+      it.line(10, 280, 300, 280);
+
+      // Luftfeuchtigkeit
+      it.print(10, 290, id(font_medium), TextAlign::TOP_LEFT,
+        "Luftfeuchtigkeit");
+      it.printf(10, 320, id(font_large), TextAlign::TOP_LEFT,
+        "%s %%",
+        id(outdoor_humidity).has_state() ? id(outdoor_humidity).state.c_str() : "--");
+
+      it.line(10, 380, 300, 380);
+
+      // Stand
+      it.strftime(10, 460, id(font_small), TextAlign::BOTTOM_LEFT,
+        "Stand: %H:%M", id(ha_time).now());
+
+      // Vertikale Trennlinie
+      it.line(310, 0, 310, 480);
+
+      // =============================================
+      // RECHTE SEITE: 310–799 (490px breit, 3 Spalten à ~163px)
+      // Spaltengrenzen: 310 | 473 | 636 | 799
+      // Spaltenmitten:  391 |     554 |     717
+      // =============================================
+
+      // Überschrift rechts
+      it.print(554, 12, id(font_title), TextAlign::TOP_CENTER,
+        "Wettervorhersage");
+      it.line(310, 50, 799, 50);
+
+      // Spaltentrennlinien
+      it.line(473, 50, 473, 460);
+      it.line(636, 50, 636, 460);
+
+      // Spaltenmitten
+      int col[3] = {391, 554, 717};
+
+      // --- TAG 1 ---
+      it.printf(col[0], 58, id(font_medium), TextAlign::TOP_CENTER,
+        "%s",
+        id(d1_date).has_state() ? id(d1_date).state.c_str() : "--");
+      it.printf(col[0], 88, id(font_small), TextAlign::TOP_CENTER,
+        "%s",
+        id(d1_condition).has_state() ? cond_de(id(d1_condition).state).c_str() : "--");
+      it.printf(col[0], 150, id(font_large), TextAlign::TOP_CENTER,
+        "%s\xc2\xb0",
+        id(d1_temphigh).has_state() ? id(d1_temphigh).state.c_str() : "--");
+      it.printf(col[0], 205, id(font_medium), TextAlign::TOP_CENTER,
+        "min %s\xc2\xb0",
+        id(d1_templow).has_state() ? id(d1_templow).state.c_str() : "--");
+      it.printf(col[0], 240, id(font_small), TextAlign::TOP_CENTER,
+        "Nied. %s mm",
+        id(d1_precip).has_state() ? id(d1_precip).state.c_str() : "--");
+
+      // --- TAG 2 ---
+      it.printf(col[1], 58, id(font_medium), TextAlign::TOP_CENTER,
+        "%s",
+        id(d2_date).has_state() ? id(d2_date).state.c_str() : "--");
+      it.printf(col[1], 88, id(font_small), TextAlign::TOP_CENTER,
+        "%s",
+        id(d2_condition).has_state() ? cond_de(id(d2_condition).state).c_str() : "--");
+      it.printf(col[1], 150, id(font_large), TextAlign::TOP_CENTER,
+        "%s\xc2\xb0",
+        id(d2_temphigh).has_state() ? id(d2_temphigh).state.c_str() : "--");
+      it.printf(col[1], 205, id(font_medium), TextAlign::TOP_CENTER,
+        "min %s\xc2\xb0",
+        id(d2_templow).has_state() ? id(d2_templow).state.c_str() : "--");
+      it.printf(col[1], 240, id(font_small), TextAlign::TOP_CENTER,
+        "Nied. %s mm",
+        id(d2_precip).has_state() ? id(d2_precip).state.c_str() : "--");
+
+      // --- TAG 3 ---
+      it.printf(col[2], 58, id(font_medium), TextAlign::TOP_CENTER,
+        "%s",
+        id(d3_date).has_state() ? id(d3_date).state.c_str() : "--");
+      it.printf(col[2], 88, id(font_small), TextAlign::TOP_CENTER,
+        "%s",
+        id(d3_condition).has_state() ? cond_de(id(d3_condition).state).c_str() : "--");
+      it.printf(col[2], 150, id(font_large), TextAlign::TOP_CENTER,
+        "%s\xc2\xb0",
+        id(d3_temphigh).has_state() ? id(d3_temphigh).state.c_str() : "--");
+      it.printf(col[2], 205, id(font_medium), TextAlign::TOP_CENTER,
+        "min %s\xc2\xb0",
+        id(d3_templow).has_state() ? id(d3_templow).state.c_str() : "--");
+      it.printf(col[2], 240, id(font_small), TextAlign::TOP_CENTER,
+        "Nied. %s mm",
+        id(d3_precip).has_state() ? id(d3_precip).state.c_str() : "--");
+
+      // Außenrahmen
+      it.rectangle(0, 0, 800, 480);
