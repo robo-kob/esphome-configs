@@ -30,6 +30,9 @@ esphome:
         - lvgl.label.update:
             id: lbl_cover_sym
             text: !lambda return std::string(LV_SYMBOL_AUDIO);
+        - lvgl.label.update:
+            id: lbl_mute
+            text: !lambda return std::string(LV_SYMBOL_MUTE);
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -185,12 +188,6 @@ output:
       ignore_strapping_warning: true
 
 interval:
-  - interval: 10s
-    then:
-      - output.set_level:
-          id: backlight_pwm
-          level: 100%
-
   - interval: 1s
     then:
       - if:
@@ -331,6 +328,10 @@ touchscreen:
     id: wt32_touch
     interrupt_pin: GPIO7
     reset_pin: GPIO39
+    on_touch:
+      - output.set_level:
+          id: backlight_pwm
+          level: 100%
 
 display:
   - platform: mipi_spi
@@ -346,6 +347,12 @@ lvgl:
     - wt32_touch
   rotation: 90
   default_font: roboto_18
+  on_idle:
+    timeout: 60s
+    then:
+      - output.set_level:
+          id: backlight_pwm
+          level: 10%
 
   style_definitions:
     - id: style_btn
@@ -379,6 +386,26 @@ lvgl:
               - label:
                   id: lbl_play_pause
                   text: ""
+                  text_font: montserrat_20
+                  align: center
+
+        # Mute Button oben Mitte
+        - button:
+            id: btn_mute
+            x: 175
+            y: 0
+            width: 130
+            height: 55
+            styles: style_btn
+            pressed:
+              bg_color: 0x444444
+            on_click:
+              then:
+                - button.press: topping_mute
+            widgets:
+              - label:
+                  id: lbl_mute
+                  text: "M"
                   text_font: montserrat_20
                   align: center
 
