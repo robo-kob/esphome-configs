@@ -5,11 +5,31 @@ esphome:
     board_build.flash_mode: dio
 
   on_boot:
-    priority: 800
-    then:
-      - output.set_level:
-          id: backlight_pwm
-          level: 100%
+    - priority: 800
+      then:
+        - output.set_level:
+            id: backlight_pwm
+            level: 100%
+    - priority: -100
+      then:
+        - lvgl.label.update:
+            id: lbl_play_pause
+            text: !lambda return std::string(LV_SYMBOL_PLAY);
+        - lvgl.label.update:
+            id: lbl_prev
+            text: !lambda return std::string(LV_SYMBOL_PREV);
+        - lvgl.label.update:
+            id: lbl_next
+            text: !lambda return std::string(LV_SYMBOL_NEXT);
+        - lvgl.label.update:
+            id: lbl_vol_down
+            text: !lambda return std::string(LV_SYMBOL_VOLUME_MID);
+        - lvgl.label.update:
+            id: lbl_vol_up
+            text: !lambda return std::string(LV_SYMBOL_VOLUME_MAX);
+        - lvgl.label.update:
+            id: lbl_cover_sym
+            text: !lambda return std::string(LV_SYMBOL_AUDIO);
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -95,7 +115,7 @@ text_sensor:
       - lvgl.label.update:
           id: lbl_play_pause
           text: !lambda |-
-            return std::string(x == "playing" ? "||" : ">");
+            return std::string(x == "playing" ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
 
   - platform: homeassistant
     id: mxn10_title
@@ -358,7 +378,8 @@ lvgl:
             widgets:
               - label:
                   id: lbl_play_pause
-                  text: ">"
+                  text: ""
+                  text_font: montserrat_20
                   align: center
 
         # Input Button oben rechts
@@ -380,11 +401,27 @@ lvgl:
                   align: center
 
         # Album Cover
-        - image:
-            id: img_cover
-            src: album_cover
+        - obj:
             x: 5
             y: 60
+            width: 155
+            height: 155
+            bg_color: 0x1A1A1A
+            border_color: 0x333333
+            border_width: 1
+            radius: 8
+            pad_all: 0
+            widgets:
+              - label:
+                  id: lbl_cover_sym
+                  text: "?"
+                  text_font: montserrat_48
+                  text_color: 0x333333
+                  align: center
+              - image:
+                  id: img_cover
+                  src: album_cover
+                  align: center
 
         # Titel
         - label:
@@ -444,7 +481,7 @@ lvgl:
             bg_color: 0x333333
             bg_opa: cover
             indicator:
-              bg_color: 0xFFFFFF
+              bg_color: 0x00BCD4
               bg_opa: cover
 
         # Zeit Position
@@ -480,7 +517,9 @@ lvgl:
                 - button.press: mxn10_previous
             widgets:
               - label:
-                  text: "<<"
+                  id: lbl_prev
+                  text: "|<"
+                  text_font: montserrat_20
                   align: center
 
         # Next Button
@@ -498,7 +537,9 @@ lvgl:
                 - button.press: mxn10_next
             widgets:
               - label:
-                  text: ">>"
+                  id: lbl_next
+                  text: ">|"
+                  text_font: montserrat_20
                   align: center
 
         # Vol- Button
@@ -516,7 +557,9 @@ lvgl:
                 - button.press: topping_volume_down
             widgets:
               - label:
-                  text: "Vol-"
+                  id: lbl_vol_down
+                  text: "v-"
+                  text_font: montserrat_20
                   align: center
 
         # Vol+ Button
@@ -534,5 +577,7 @@ lvgl:
                 - button.press: topping_volume_up
             widgets:
               - label:
-                  text: "Vol+"
+                  id: lbl_vol_up
+                  text: "v+"
+                  text_font: montserrat_20
                   align: center
