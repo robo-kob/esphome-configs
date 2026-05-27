@@ -64,6 +64,10 @@ online_image:
     format: jpeg
     type: RGB565
     resize: 155x155
+    on_download_finished:
+      - lvgl.image.update:
+          id: img_cover
+          src: album_cover
 
 sensor:
   - platform: homeassistant
@@ -307,9 +311,6 @@ touchscreen:
     id: wt32_touch
     interrupt_pin: GPIO7
     reset_pin: GPIO39
-    transform:
-      swap_xy: true
-      mirror_y: true
 
 display:
   - platform: mipi_spi
