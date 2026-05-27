@@ -186,9 +186,15 @@ actions:
           y_end: 52
           fill: black
           outline: black
+        - type: icon
+          value: mdi:calendar-multiselect
+          x: 5
+          "y": 8
+          size: 34
+          color: white
         - type: text
           value: Familienkalender
-          x: 20
+          x: 50
           "y": 10
           size: 26
           color: white
