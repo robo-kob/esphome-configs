@@ -90,7 +90,8 @@ text_sensor:
     on_value:
       - lvgl.label.update:
           id: lbl_play_pause
-          text: !lambda return x == "playing" ? "||" : ">";
+          text: !lambda |-
+            return x == "playing" ? "||" : ">";
 
   - platform: homeassistant
     id: mxn10_title
@@ -100,7 +101,8 @@ text_sensor:
     on_value:
       - lvgl.label.update:
           id: lbl_title
-          text: !lambda return x.length() > 0 ? x.c_str() : "Kein Titel";
+          text: !lambda |-
+            return x.length() > 0 ? x.c_str() : "Kein Titel";
 
   - platform: homeassistant
     id: mxn10_artist
@@ -110,7 +112,8 @@ text_sensor:
     on_value:
       - lvgl.label.update:
           id: lbl_artist
-          text: !lambda return x.length() > 0 ? x.c_str() : "-";
+          text: !lambda |-
+            return x.length() > 0 ? x.c_str() : "-";
 
   - platform: homeassistant
     id: mxn10_album
@@ -130,7 +133,8 @@ text_sensor:
     on_value:
       - lvgl.label.update:
           id: lbl_source
-          text: !lambda return x.empty() ? std::string("") : "Quelle: " + x;
+          text: !lambda |-
+            return x.empty() ? std::string("") : "Quelle: " + x;
 
   - platform: homeassistant
     id: mxn10_entity_picture
