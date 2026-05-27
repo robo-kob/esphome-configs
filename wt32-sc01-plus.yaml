@@ -419,7 +419,7 @@ lvgl:
                     then:
                       - lvgl.label.update:
                           id: lbl_mute
-                          text: "MUTE"
+                          text: "Mute"
                           text_color: 0xFF4444
                     else:
                       - lvgl.label.update:
