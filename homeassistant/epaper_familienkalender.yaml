@@ -1,0 +1,592 @@
+alias: OpenEPaperLink - Familienkalender groß aktualisieren
+description: Zeigt Kalendertermine auf dem 7.5 Zoll Tag, Querformat, 3 Spalten.
+triggers:
+  - trigger: time
+    at: "06:00:00"
+  - trigger: time
+    at: "12:00:00"
+  - trigger: time
+    at: "18:00:00"
+conditions: []
+actions:
+  - action: calendar.get_events
+    target:
+      entity_id:
+        - calendar.familienkalender
+        - calendar.feiertage_hessen
+        - calendar.ferien_hessen
+        - calendar.elw_abfallkalender
+    data:
+      start_date_time: "{{ now().isoformat() }}"
+      end_date_time: "{{ (now() + timedelta(days=3)).isoformat() }}"
+    response_variable: kalender
+  - action: weather.get_forecasts
+    target:
+      entity_id: weather.forecast_home
+    data:
+      type: daily
+    response_variable: wetter
+  - variables:
+      wochentage: Montag,Dienstag,Mittwoch,Donnerstag,Freitag,Samstag,Sonntag
+      tag0_date: "{{ now().strftime('%Y-%m-%d') }}"
+      tag1_date: "{{ (now() + timedelta(days=1)).strftime('%Y-%m-%d') }}"
+      tag2_date: "{{ (now() + timedelta(days=2)).strftime('%Y-%m-%d') }}"
+      tag0_label: >-
+        {{ wochentage.split(',')[now().weekday()] }}, {{
+        now().strftime('%d.%m.') }}
+      tag1_label: >-
+        {{ wochentage.split(',')[(now() + timedelta(days=1)).weekday()] }}, {{
+        (now() + timedelta(days=1)).strftime('%d.%m.') }}
+      tag2_label: >-
+        {{ wochentage.split(',')[(now() + timedelta(days=2)).weekday()] }}, {{
+        (now() + timedelta(days=2)).strftime('%d.%m.') }}
+      naechste_aktualisierung: |-
+        {% set h = now().hour %}
+        {% if h < 6 %}06:00
+        {% elif h < 12 %}12:00
+        {% elif h < 18 %}18:00
+        {% else %}06:00 (morgen)
+        {% endif %}
+      wetter_text: |-
+        {% set forecast = wetter['weather.forecast_home'].forecast %}
+        {% if forecast | count > 0 %}
+          {% set heute = forecast[0] %}
+          {% set zustand = heute.condition %}
+          {% set zustand_de = {
+            'sunny': 'sonnig',
+            'clear-night': 'klar',
+            'partlycloudy': 'leicht bewölkt',
+            'cloudy': 'bewölkt',
+            'fog': 'neblig',
+            'rainy': 'regnerisch',
+            'pouring': 'Starkregen',
+            'snowy': 'schneeig',
+            'snowy-rainy': 'Schneeregen',
+            'windy': 'windig',
+            'windy-variant': 'böig',
+            'hail': 'Hagel',
+            'lightning': 'Gewitter',
+            'lightning-rainy': 'Gewitter+Regen',
+            'exceptional': 'außergewöhnlich'
+          } %}
+          {% set tmin = heute.templow | round(0) | int %}
+          {% set tmax = heute.temperature | round(0) | int %}
+          {{ tmin }}°-{{ tmax }}°C  {{ zustand_de.get(zustand, zustand) }}
+        {% else %}
+          Keine Wetterdaten
+        {% endif %}
+  - variables:
+      alle_lines: |-
+        {% set ns = namespace(lines=[]) %}
+        {% for cal_id, cal_data in kalender.items() %}
+          {% for event in cal_data.events %}
+            {% set event_start = as_datetime(event.start) %}
+            {% set event_end = as_datetime(event.end) %}
+            {% set is_allday = 'T' not in event.start %}
+            {% set title = event.summary | default('Termin') %}
+            {% if cal_id == 'calendar.elw_abfallkalender' %}
+              {% set label = 'Müll: ' ~ title %}
+            {% elif cal_id == 'calendar.feiertage_hessen' %}
+              {% set label = 'Feiertag: ' ~ title %}
+            {% elif cal_id == 'calendar.ferien_hessen' %}
+              {% set label = 'Ferien: ' ~ title %}
+            {% elif not is_allday %}
+              {% set label = event_start.strftime('%H:%M') ~ ' ' ~ title %}
+            {% else %}
+              {% set label = title %}
+            {% endif %}
+            {% for offset in [0, 1, 2] %}
+              {% set check_date = (now() + timedelta(days=offset)).strftime('%Y-%m-%d') %}
+              {% set check_dt = as_datetime(check_date) %}
+              {% if is_allday %}
+                {% if event_start <= check_dt < event_end %}
+                  {% set ns.lines = ns.lines + [check_date ~ '||||' ~ check_date ~ event_start.strftime('%H%M') ~ '||||' ~ label] %}
+                {% endif %}
+              {% else %}
+                {% if event_start.strftime('%Y-%m-%d') == check_date %}
+                  {% set ns.lines = ns.lines + [check_date ~ '||||' ~ check_date ~ event_start.strftime('%H%M') ~ '||||' ~ label] %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+          {% endfor %}
+        {% endfor %}
+        {{ ns.lines | sort | join('~~~~') }}
+  - variables:
+      tag0_lines: >-
+        {% set all = alle_lines.split('~~~~') %}
+
+        {% set ns = namespace(out=[]) %}
+
+        {% for item in all %}
+          {% set parts = item.split('||||') %}
+          {% if parts | count >= 3 and parts[0] == tag0_date %}
+            {% set t = parts[2] %}
+            {% if t | length > 25 %}
+              {% set ns.out = ns.out + [t[:22] ~ '...'] %}
+            {% else %}
+              {% set ns.out = ns.out + [t] %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+
+        {% if ns.out | count == 0 %}Keine Termine{% else %}{{ ns.out |
+        join('~~~~') }}{% endif %}
+      tag1_lines: >-
+        {% set all = alle_lines.split('~~~~') %}
+
+        {% set ns = namespace(out=[]) %}
+
+        {% for item in all %}
+          {% set parts = item.split('||||') %}
+          {% if parts | count >= 3 and parts[0] == tag1_date %}
+            {% set t = parts[2] %}
+            {% if t | length > 25 %}
+              {% set ns.out = ns.out + [t[:22] ~ '...'] %}
+            {% else %}
+              {% set ns.out = ns.out + [t] %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+
+        {% if ns.out | count == 0 %}Keine Termine{% else %}{{ ns.out |
+        join('~~~~') }}{% endif %}
+      tag2_lines: >-
+        {% set all = alle_lines.split('~~~~') %}
+
+        {% set ns = namespace(out=[]) %}
+
+        {% for item in all %}
+          {% set parts = item.split('||||') %}
+          {% if parts | count >= 3 and parts[0] == tag2_date %}
+            {% set t = parts[2] %}
+            {% if t | length > 25 %}
+              {% set ns.out = ns.out + [t[:22] ~ '...'] %}
+            {% else %}
+              {% set ns.out = ns.out + [t] %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+
+        {% if ns.out | count == 0 %}Keine Termine{% else %}{{ ns.out |
+        join('~~~~') }}{% endif %}
+  - action: open_epaper_link.drawcustom
+    target:
+      device_id: b6aa07928e8547524229b2874a29508f
+    data:
+      background: white
+      rotate: 0
+      ttl: 86400
+      payload:
+        - type: rectangle
+          x_start: 0
+          y_start: 0
+          x_end: 800
+          y_end: 52
+          fill: black
+          outline: black
+        - type: text
+          value: Familienkalender
+          x: 20
+          "y": 10
+          size: 26
+          color: white
+        - type: text
+          value: "{{ wetter_text }}"
+          x: 330
+          "y": 16
+          size: 20
+          color: white
+        - type: text
+          value: "{{ now().strftime('%d.%m.%Y') }}"
+          x: 650
+          "y": 16
+          size: 22
+          color: white
+        - type: rectangle
+          x_start: 0
+          y_start: 458
+          x_end: 800
+          y_end: 480
+          fill: black
+          outline: black
+        - type: text
+          value: "Aktualisiert: {{ now().strftime('%H:%M') }}"
+          x: 10
+          "y": 463
+          size: 16
+          color: white
+        - type: text
+          value: "Nächste Akt.: {{ naechste_aktualisierung }}"
+          x: 280
+          "y": 463
+          size: 16
+          color: white
+        - type: text
+          value: "Bat: {{ states('sensor.6262331ba3f1dc05_battery_percentage') }}%"
+          x: 548
+          "y": 463
+          size: 16
+          color: white
+        - type: rectangle
+          x_start: 0
+          y_start: 53
+          x_end: 267
+          y_end: 93
+          fill: yellow
+          outline: yellow
+        - type: text
+          value: "{{ tag0_label }}"
+          x: 10
+          "y": 58
+          size: 24
+          color: black
+        - type: line
+          x_start: 10
+          y_start: 94
+          x_end: 258
+          y_end: 94
+          width: 1
+          color: black
+        - type: text
+          value: >-
+            {{ tag0_lines.split('~~~~')[0] if tag0_lines.split('~~~~') | count >
+            0 else '' }}
+          x: 10
+          "y": 102
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag0_lines.split('~~~~')[1] if tag0_lines.split('~~~~') | count >
+            1 else '' }}
+          x: 10
+          "y": 132
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag0_lines.split('~~~~')[2] if tag0_lines.split('~~~~') | count >
+            2 else '' }}
+          x: 10
+          "y": 162
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag0_lines.split('~~~~')[3] if tag0_lines.split('~~~~') | count >
+            3 else '' }}
+          x: 10
+          "y": 192
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag0_lines.split('~~~~')[4] if tag0_lines.split('~~~~') | count >
+            4 else '' }}
+          x: 10
+          "y": 222
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag0_lines.split('~~~~')[5] if tag0_lines.split('~~~~') | count >
+            5 else '' }}
+          x: 10
+          "y": 252
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag0_lines.split('~~~~')[6] if tag0_lines.split('~~~~') | count >
+            6 else '' }}
+          x: 10
+          "y": 282
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag0_lines.split('~~~~')[7] if tag0_lines.split('~~~~') | count >
+            7 else '' }}
+          x: 10
+          "y": 312
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag0_lines.split('~~~~')[8] if tag0_lines.split('~~~~') | count >
+            8 else '' }}
+          x: 10
+          "y": 342
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag0_lines.split('~~~~')[9] if tag0_lines.split('~~~~') | count >
+            9 else '' }}
+          x: 10
+          "y": 372
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag0_lines.split('~~~~')[10] if tag0_lines.split('~~~~') | count
+            > 10 else '' }}
+          x: 10
+          "y": 402
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag0_lines.split('~~~~')[11] if tag0_lines.split('~~~~') | count
+            > 11 else '' }}
+          x: 10
+          "y": 432
+          size: 19
+          color: black
+        - type: line
+          x_start: 268
+          y_start: 0
+          x_end: 268
+          y_end: 480
+          width: 1
+          color: black
+        - type: rectangle
+          x_start: 269
+          y_start: 53
+          x_end: 535
+          y_end: 93
+          fill: yellow
+          outline: yellow
+        - type: text
+          value: "{{ tag1_label }}"
+          x: 278
+          "y": 58
+          size: 24
+          color: black
+        - type: line
+          x_start: 278
+          y_start: 94
+          x_end: 526
+          y_end: 94
+          width: 1
+          color: black
+        - type: text
+          value: >-
+            {{ tag1_lines.split('~~~~')[0] if tag1_lines.split('~~~~') | count >
+            0 else '' }}
+          x: 278
+          "y": 102
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag1_lines.split('~~~~')[1] if tag1_lines.split('~~~~') | count >
+            1 else '' }}
+          x: 278
+          "y": 132
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag1_lines.split('~~~~')[2] if tag1_lines.split('~~~~') | count >
+            2 else '' }}
+          x: 278
+          "y": 162
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag1_lines.split('~~~~')[3] if tag1_lines.split('~~~~') | count >
+            3 else '' }}
+          x: 278
+          "y": 192
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag1_lines.split('~~~~')[4] if tag1_lines.split('~~~~') | count >
+            4 else '' }}
+          x: 278
+          "y": 222
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag1_lines.split('~~~~')[5] if tag1_lines.split('~~~~') | count >
+            5 else '' }}
+          x: 278
+          "y": 252
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag1_lines.split('~~~~')[6] if tag1_lines.split('~~~~') | count >
+            6 else '' }}
+          x: 278
+          "y": 282
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag1_lines.split('~~~~')[7] if tag1_lines.split('~~~~') | count >
+            7 else '' }}
+          x: 278
+          "y": 312
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag1_lines.split('~~~~')[8] if tag1_lines.split('~~~~') | count >
+            8 else '' }}
+          x: 278
+          "y": 342
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag1_lines.split('~~~~')[9] if tag1_lines.split('~~~~') | count >
+            9 else '' }}
+          x: 278
+          "y": 372
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag1_lines.split('~~~~')[10] if tag1_lines.split('~~~~') | count
+            > 10 else '' }}
+          x: 278
+          "y": 402
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag1_lines.split('~~~~')[11] if tag1_lines.split('~~~~') | count
+            > 11 else '' }}
+          x: 278
+          "y": 432
+          size: 19
+          color: black
+        - type: line
+          x_start: 536
+          y_start: 0
+          x_end: 536
+          y_end: 480
+          width: 1
+          color: black
+        - type: rectangle
+          x_start: 537
+          y_start: 53
+          x_end: 800
+          y_end: 93
+          fill: yellow
+          outline: yellow
+        - type: text
+          value: "{{ tag2_label }}"
+          x: 546
+          "y": 58
+          size: 24
+          color: black
+        - type: line
+          x_start: 546
+          y_start: 94
+          x_end: 794
+          y_end: 94
+          width: 1
+          color: black
+        - type: text
+          value: >-
+            {{ tag2_lines.split('~~~~')[0] if tag2_lines.split('~~~~') | count >
+            0 else '' }}
+          x: 546
+          "y": 102
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag2_lines.split('~~~~')[1] if tag2_lines.split('~~~~') | count >
+            1 else '' }}
+          x: 546
+          "y": 132
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag2_lines.split('~~~~')[2] if tag2_lines.split('~~~~') | count >
+            2 else '' }}
+          x: 546
+          "y": 162
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag2_lines.split('~~~~')[3] if tag2_lines.split('~~~~') | count >
+            3 else '' }}
+          x: 546
+          "y": 192
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag2_lines.split('~~~~')[4] if tag2_lines.split('~~~~') | count >
+            4 else '' }}
+          x: 546
+          "y": 222
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag2_lines.split('~~~~')[5] if tag2_lines.split('~~~~') | count >
+            5 else '' }}
+          x: 546
+          "y": 252
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag2_lines.split('~~~~')[6] if tag2_lines.split('~~~~') | count >
+            6 else '' }}
+          x: 546
+          "y": 282
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag2_lines.split('~~~~')[7] if tag2_lines.split('~~~~') | count >
+            7 else '' }}
+          x: 546
+          "y": 312
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag2_lines.split('~~~~')[8] if tag2_lines.split('~~~~') | count >
+            8 else '' }}
+          x: 546
+          "y": 342
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag2_lines.split('~~~~')[9] if tag2_lines.split('~~~~') | count >
+            9 else '' }}
+          x: 546
+          "y": 372
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag2_lines.split('~~~~')[10] if tag2_lines.split('~~~~') | count
+            > 10 else '' }}
+          x: 546
+          "y": 402
+          size: 19
+          color: black
+        - type: text
+          value: >-
+            {{ tag2_lines.split('~~~~')[11] if tag2_lines.split('~~~~') | count
+            > 11 else '' }}
+          x: 546
+          "y": 432
+          size: 19
+          color: black
+mode: single
