@@ -5,19 +5,6 @@ esphome:
   name_add_mac_suffix: false
   platformio_options:
     board_upload.maximum_ram_size: 524288
-  on_boot:
-    priority: 300
-    then:
-      - lambda: |-
-          // CH32V003 an I2C 0x24: Backlight einschalten
-          // Versuch 1: einzelnes Byte 0xFF (alle Pins high)
-          uint8_t cmd1 = 0xFF;
-          auto err1 = id(bus_a)->write(0x24, &cmd1, 1, true);
-          ESP_LOGI("BL", "I2C 0xFF: %d", (int)err1);
-          // Versuch 2: Register 0x02 = Backlight Pin, Wert 0xFF
-          uint8_t cmd2[] = {0x02, 0xFF};
-          auto err2 = id(bus_a)->write(0x24, cmd2, 2, true);
-          ESP_LOGI("BL", "I2C {0x02,0xFF}: %d", (int)err2);
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -97,6 +84,20 @@ display:
         - 18        # b5
         - 17        # b6
         - 10        # b7
+
+interval:
+  - interval: 3s
+    then:
+      - lambda: |-
+          static uint8_t step = 0;
+          i2c::ErrorCode e;
+          switch (step % 4) {
+            case 0: { uint8_t d[] = {0xFF};             e = id(bus_a)->write(0x24, d, 1, true); ESP_LOGI("BL", "0xFF -> %d", (int)e); break; }
+            case 1: { uint8_t d[] = {0x01, 0xFF};       e = id(bus_a)->write(0x24, d, 2, true); ESP_LOGI("BL", "0x01,0xFF -> %d", (int)e); break; }
+            case 2: { uint8_t d[] = {0x02, 0xFF};       e = id(bus_a)->write(0x24, d, 2, true); ESP_LOGI("BL", "0x02,0xFF -> %d", (int)e); break; }
+            case 3: { uint8_t d[] = {0x03, 0x00, 0x01, 0xFF}; id(bus_a)->write(0x24, d, 2, true); uint8_t d2[] = {0x01, 0xFF}; e = id(bus_a)->write(0x24, d2, 2, true); ESP_LOGI("BL", "PCA-style -> %d", (int)e); break; }
+          }
+          step++;
 
 touchscreen:
   - platform: gt911
