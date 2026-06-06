@@ -5,6 +5,30 @@ esphome:
   name_add_mac_suffix: false
   platformio_options:
     board_upload.maximum_ram_size: 524288
+  on_boot:
+    - priority: -100
+      then:
+        - lvgl.label.update:
+            id: lbl_play_pause
+            text: !lambda return std::string(LV_SYMBOL_PLAY);
+        - lvgl.label.update:
+            id: lbl_prev
+            text: !lambda return std::string(LV_SYMBOL_PREV);
+        - lvgl.label.update:
+            id: lbl_next
+            text: !lambda return std::string(LV_SYMBOL_NEXT);
+        - lvgl.label.update:
+            id: lbl_vol_down
+            text: !lambda return std::string(LV_SYMBOL_VOLUME_MID);
+        - lvgl.label.update:
+            id: lbl_vol_up
+            text: !lambda return std::string(LV_SYMBOL_VOLUME_MAX);
+        - lvgl.label.update:
+            id: lbl_cover_sym
+            text: !lambda return std::string(LV_SYMBOL_AUDIO);
+        - lvgl.label.update:
+            id: lbl_mute
+            text: "Mute"
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -30,13 +54,13 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+  power_save_mode: none
   ap:
     ssid: "Waveshare 7B Fallback"
     password: "12345678"
 
 captive_portal:
 
-# CH32V003 Komponente fuer Backlight, Touch-Reset und Display-Reset
 external_components:
   - source:
       type: git
@@ -56,7 +80,6 @@ waveshare_io_ch32v003:
   i2c_id: bus_a
   address: 0x24
 
-# Backlight PWM ueber CH32V003
 output:
   - platform: waveshare_io_ch32v003
     id: wave_io_pwm_output
@@ -75,7 +98,6 @@ light:
     restore_mode: ALWAYS_ON
     default_transition_length: 0ms
 
-# Backlight GPIO-Switch (pin 2 des CH32V003)
 switch:
   - platform: gpio
     name: "Backlight Switch"
@@ -86,6 +108,250 @@ switch:
       number: 2
       mode: OUTPUT
     restore_mode: ALWAYS_ON
+
+http_request:
+  useragent: esphome
+  timeout: 5s
+
+online_image:
+  - id: album_cover
+    url: "http://192.168.1.33:8123/"
+    format: jpeg
+    type: RGB565
+    resize: 260x260
+    on_download_finished:
+      - lvgl.image.update:
+          id: img_cover
+          src: album_cover
+
+globals:
+  - id: local_position_s
+    type: float
+    restore_value: no
+    initial_value: '0'
+  - id: local_position_ts
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: mute_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+sensor:
+  - platform: homeassistant
+    id: mxn10_media_duration
+    entity_id: media_player.streamer_lossles_mxn10
+    attribute: media_duration
+    internal: true
+
+  - platform: homeassistant
+    id: mxn10_media_position
+    entity_id: media_player.streamer_lossles_mxn10
+    attribute: media_position
+    internal: true
+    on_value:
+      - lambda: |-
+          id(local_position_s) = x;
+          id(local_position_ts) = millis();
+
+text_sensor:
+  - platform: homeassistant
+    id: mxn10_state
+    entity_id: media_player.streamer_lossles_mxn10
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_play_pause
+          text: !lambda |-
+            return std::string(x == "playing" ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
+
+  - platform: homeassistant
+    id: mxn10_title
+    entity_id: media_player.streamer_lossles_mxn10
+    attribute: media_title
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_title
+          text: !lambda |-
+            return x.length() > 0 ? x : std::string("Kein Titel");
+
+  - platform: homeassistant
+    id: mxn10_artist
+    entity_id: media_player.streamer_lossles_mxn10
+    attribute: media_artist
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_artist
+          text: !lambda |-
+            return x.length() > 0 ? x : std::string("-");
+
+  - platform: homeassistant
+    id: mxn10_album
+    entity_id: media_player.streamer_lossles_mxn10
+    attribute: media_album_name
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_album
+          text: !lambda return x.c_str();
+
+  - platform: homeassistant
+    id: mxn10_source
+    entity_id: media_player.streamer_lossles_mxn10
+    attribute: source
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_source
+          text: !lambda |-
+            return x.empty() ? std::string("") : "Quelle: " + x;
+
+  - platform: homeassistant
+    id: mxn10_entity_picture
+    entity_id: media_player.streamer_lossles_mxn10
+    attribute: entity_picture
+    internal: true
+    on_value:
+      - lambda: |-
+          if (!x.empty()) {
+            id(album_cover).set_url(("http://192.168.1.33:8123" + x).c_str());
+          }
+      - component.update: album_cover
+
+interval:
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: 'return id(mxn10_media_duration).has_state() && id(mxn10_media_duration).state > 0;'
+          then:
+            - lvgl.bar.update:
+                id: progress_bar
+                value: !lambda |-
+                  float duration = id(mxn10_media_duration).state;
+                  float position = id(local_position_s);
+                  if (id(mxn10_state).has_state() && id(mxn10_state).state == "playing") {
+                    position += (millis() - id(local_position_ts)) / 1000.0f;
+                  }
+                  if (position > duration) position = duration;
+                  return (int)(position / duration * 100);
+            - lvgl.label.update:
+                id: lbl_time_pos
+                text: !lambda |-
+                  float position = id(local_position_s);
+                  if (id(mxn10_state).has_state() && id(mxn10_state).state == "playing") {
+                    position += (millis() - id(local_position_ts)) / 1000.0f;
+                  }
+                  float duration = id(mxn10_media_duration).state;
+                  if (position > duration) position = duration;
+                  char buf[16];
+                  snprintf(buf, sizeof(buf), "%d:%02d", ((int)position)/60, ((int)position)%60);
+                  return std::string(buf);
+            - lvgl.label.update:
+                id: lbl_time_dur
+                text: !lambda |-
+                  float duration = id(mxn10_media_duration).state;
+                  char buf[16];
+                  snprintf(buf, sizeof(buf), "%d:%02d", ((int)duration)/60, ((int)duration)%60);
+                  return std::string(buf);
+
+button:
+  - platform: template
+    name: "MXN10 Previous"
+    id: mxn10_previous
+    on_press:
+      - homeassistant.action:
+          action: media_player.media_previous_track
+          data:
+            entity_id: media_player.streamer_lossles_mxn10
+
+  - platform: template
+    name: "MXN10 Play Pause"
+    id: mxn10_play_pause
+    on_press:
+      - homeassistant.action:
+          action: media_player.media_play_pause
+          data:
+            entity_id: media_player.streamer_lossles_mxn10
+
+  - platform: template
+    name: "MXN10 Next"
+    id: mxn10_next
+    on_press:
+      - homeassistant.action:
+          action: media_player.media_next_track
+          data:
+            entity_id: media_player.streamer_lossles_mxn10
+
+  - platform: template
+    name: "Topping Mute"
+    id: topping_mute
+    on_press:
+      - homeassistant.action:
+          action: remote.send_command
+          data:
+            entity_id: remote.universal_remote
+            device: "Topping Pre 90"
+            command: "mute"
+
+  - platform: template
+    name: "Topping Leiser"
+    id: topping_volume_down
+    on_press:
+      - homeassistant.action:
+          action: remote.send_command
+          data:
+            entity_id: remote.universal_remote
+            device: "Topping Pre 90"
+            command: "volume_down"
+
+  - platform: template
+    name: "Topping Lauter"
+    id: topping_volume_up
+    on_press:
+      - homeassistant.action:
+          action: remote.send_command
+          data:
+            entity_id: remote.universal_remote
+            device: "Topping Pre 90"
+            command: "volume_up"
+
+  - platform: template
+    name: "Topping Input"
+    id: topping_input_toggle
+    on_press:
+      - homeassistant.action:
+          action: remote.send_command
+          data:
+            entity_id: remote.universal_remote
+            device: "Topping Pre 90"
+            command: "input_rca"
+
+font:
+  - file: "gfonts://Roboto"
+    id: roboto_36
+    size: 36
+    bpp: 4
+    extras:
+      - file: "gfonts://Roboto"
+        glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
+  - file: "gfonts://Roboto"
+    id: roboto_24
+    size: 24
+    bpp: 4
+    extras:
+      - file: "gfonts://Roboto"
+        glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
+  - file: "gfonts://Roboto"
+    id: roboto_18
+    size: 18
+    bpp: 4
+    extras:
+      - file: "gfonts://Roboto"
+        glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
 
 display:
   - platform: rpi_dpi_rgb
@@ -144,20 +410,297 @@ touchscreen:
       waveshare_io_ch32v003: waveshare_io_hub
       number: 1
       mode: OUTPUT
+    on_touch:
+      - light.turn_on:
+          id: display_backlight
+          brightness: 100%
 
 lvgl:
   displays:
     - waveshare_display
   touchscreens:
     - waveshare_touch
-  default_font: montserrat_14
+  default_font: roboto_24
+  on_idle:
+    timeout: 60s
+    then:
+      - light.turn_on:
+          id: display_backlight
+          brightness: 10%
+
+  style_definitions:
+    - id: style_btn
+      bg_color: 0x1A1A1A
+      bg_opa: cover
+      border_width: 1
+      border_color: 0x333333
+      text_color: 0xFFFFFF
+      radius: 8
 
   pages:
     - id: main_page
-      bg_color: 0xFFFFFF
+      bg_color: 0x000000
       bg_opa: cover
+
       widgets:
+        # Play/Pause Button oben links
+        - button:
+            id: btn_play_pause
+            x: 0
+            y: 0
+            width: 230
+            height: 75
+            styles: style_btn
+            pressed:
+              bg_color: 0x444444
+            on_click:
+              then:
+                - button.press: mxn10_play_pause
+            widgets:
+              - label:
+                  id: lbl_play_pause
+                  text: ""
+                  text_font: montserrat_28
+                  align: center
+
+        # Mute Button oben Mitte
+        - button:
+            id: btn_mute
+            x: 240
+            y: 0
+            width: 220
+            height: 75
+            styles: style_btn
+            pressed:
+              bg_color: 0x444444
+            on_click:
+              then:
+                - button.press: topping_mute
+                - lambda: id(mute_active) = !id(mute_active);
+                - if:
+                    condition:
+                      lambda: return id(mute_active);
+                    then:
+                      - lvgl.label.update:
+                          id: lbl_mute
+                          text: "Mute"
+                          text_color: 0xFF4444
+                    else:
+                      - lvgl.label.update:
+                          id: lbl_mute
+                          text: "Mute"
+                          text_color: 0xFFFFFF
+            widgets:
+              - label:
+                  id: lbl_mute
+                  text: "Mute"
+                  align: center
+
+        # Input Button oben rechts
+        - button:
+            id: btn_input
+            x: 790
+            y: 0
+            width: 234
+            height: 75
+            styles: style_btn
+            pressed:
+              bg_color: 0x444444
+            on_click:
+              then:
+                - button.press: topping_input_toggle
+            widgets:
+              - label:
+                  text: "Input"
+                  align: center
+
+        # Album Cover (260x260)
+        - obj:
+            x: 10
+            y: 85
+            width: 260
+            height: 260
+            bg_color: 0x1A1A1A
+            border_color: 0x333333
+            border_width: 1
+            radius: 10
+            pad_all: 0
+            widgets:
+              - label:
+                  id: lbl_cover_sym
+                  text: "?"
+                  text_font: montserrat_48
+                  text_color: 0x333333
+                  align: center
+              - image:
+                  id: img_cover
+                  src: album_cover
+                  align: center
+
+        # Titel (gross, scrollend)
         - label:
-            text: "Waveshare 7B - ESPHome OK"
-            align: center
-            text_color: 0x000000
+            id: lbl_title
+            x: 285
+            y: 90
+            width: 729
+            height: 50
+            text: "Kein Titel"
+            text_color: 0xFFFFFF
+            text_font: roboto_36
+            text_align: center
+            long_mode: scroll_circular
+
+        # Artist
+        - label:
+            id: lbl_artist
+            x: 285
+            y: 152
+            width: 729
+            height: 36
+            text: "-"
+            text_color: 0xCCCCCC
+            text_font: roboto_24
+            text_align: center
+            long_mode: dot
+
+        # Album
+        - label:
+            id: lbl_album
+            x: 285
+            y: 196
+            width: 729
+            height: 32
+            text: ""
+            text_color: 0xAAAAAA
+            text_font: roboto_24
+            text_align: center
+            long_mode: dot
+
+        # Quelle
+        - label:
+            id: lbl_source
+            x: 285
+            y: 236
+            width: 729
+            height: 26
+            text: ""
+            text_color: 0x777777
+            text_font: roboto_18
+            text_align: left
+            long_mode: dot
+
+        # Fortschrittsbalken
+        - bar:
+            id: progress_bar
+            x: 50
+            y: 375
+            width: 924
+            height: 14
+            min_value: 0
+            max_value: 100
+            value: 0
+            bg_color: 0x333333
+            bg_opa: cover
+            indicator:
+              bg_color: 0x00BCD4
+              bg_opa: cover
+
+        # Zeit Position
+        - label:
+            id: lbl_time_pos
+            x: 50
+            y: 396
+            text: "0:00"
+            text_color: 0xFFFFFF
+            text_font: roboto_18
+
+        # Zeit Dauer
+        - label:
+            id: lbl_time_dur
+            x: 874
+            y: 396
+            width: 100
+            text: "0:00"
+            text_color: 0xFFFFFF
+            text_font: roboto_18
+            text_align: right
+
+        # Previous Button
+        - button:
+            id: btn_prev
+            x: 0
+            y: 430
+            width: 256
+            height: 170
+            styles: style_btn
+            pressed:
+              bg_color: 0x444444
+            on_click:
+              then:
+                - button.press: mxn10_previous
+            widgets:
+              - label:
+                  id: lbl_prev
+                  text: "|<"
+                  text_font: montserrat_28
+                  align: center
+
+        # Next Button
+        - button:
+            id: btn_next
+            x: 256
+            y: 430
+            width: 256
+            height: 170
+            styles: style_btn
+            pressed:
+              bg_color: 0x444444
+            on_click:
+              then:
+                - button.press: mxn10_next
+            widgets:
+              - label:
+                  id: lbl_next
+                  text: ">|"
+                  text_font: montserrat_28
+                  align: center
+
+        # Vol- Button
+        - button:
+            id: btn_vol_down
+            x: 512
+            y: 430
+            width: 256
+            height: 170
+            styles: style_btn
+            pressed:
+              bg_color: 0x444444
+            on_click:
+              then:
+                - button.press: topping_volume_down
+            widgets:
+              - label:
+                  id: lbl_vol_down
+                  text: "v-"
+                  text_font: montserrat_28
+                  align: center
+
+        # Vol+ Button
+        - button:
+            id: btn_vol_up
+            x: 768
+            y: 430
+            width: 256
+            height: 170
+            styles: style_btn
+            pressed:
+              bg_color: 0x444444
+            on_click:
+              then:
+                - button.press: topping_volume_up
+            widgets:
+              - label:
+                  id: lbl_vol_up
+                  text: "v+"
+                  text_font: montserrat_28
+                  align: center
