@@ -87,6 +87,7 @@ display:
 touchscreen:
   - platform: gt911
     id: waveshare_touch
+    address: 0x5D
     interrupt_pin: GPIO4
 
 lvgl:
