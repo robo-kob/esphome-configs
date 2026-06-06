@@ -6,12 +6,18 @@ esphome:
   platformio_options:
     board_upload.maximum_ram_size: 524288
   on_boot:
-    priority: 600
+    priority: 300
     then:
       - lambda: |-
-          // CH32V003 an I2C 0x24: Backlight (pin2) und Touch-Reset (pin1) einschalten
-          uint8_t cmd = 0xFF;
-          id(bus_a)->write(0x24, &cmd, 1, true);
+          // CH32V003 an I2C 0x24: Backlight einschalten
+          // Versuch 1: einzelnes Byte 0xFF (alle Pins high)
+          uint8_t cmd1 = 0xFF;
+          auto err1 = id(bus_a)->write(0x24, &cmd1, 1, true);
+          ESP_LOGI("BL", "I2C 0xFF: %d", (int)err1);
+          // Versuch 2: Register 0x02 = Backlight Pin, Wert 0xFF
+          uint8_t cmd2[] = {0x02, 0xFF};
+          auto err2 = id(bus_a)->write(0x24, cmd2, 2, true);
+          ESP_LOGI("BL", "I2C {0x02,0xFF}: %d", (int)err2);
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -107,10 +113,10 @@ lvgl:
 
   pages:
     - id: main_page
-      bg_color: 0x1A1A1A
+      bg_color: 0xFFFFFF
       bg_opa: cover
       widgets:
         - label:
             text: "Waveshare 7B - ESPHome OK"
             align: center
-            text_color: 0xFFFFFF
+            text_color: 0x000000
