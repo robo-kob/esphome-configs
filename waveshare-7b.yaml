@@ -39,7 +39,7 @@ i2c:
   scan: true
 
 display:
-  - platform: mipi_rgb
+  - platform: rpi_dpi_rgb
     id: waveshare_display
     update_interval: never
     auto_clear_enabled: false
