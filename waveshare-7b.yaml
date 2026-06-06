@@ -12,6 +12,9 @@ esp32:
   flash_size: 16MB
   framework:
     type: esp-idf
+    sdkconfig_options:
+      CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
+      CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
 
 psram:
   mode: octal
@@ -33,11 +36,56 @@ wifi:
 
 captive_portal:
 
+# CH32V003 Komponente fuer Backlight, Touch-Reset und Display-Reset
+external_components:
+  - source:
+      type: git
+      url: https://github.com/fuzzybear62/esphome-waveshare_io_ch32v003
+      ref: main
+    components: [ waveshare_io_ch32v003 ]
+
 i2c:
   id: bus_a
   sda: GPIO8
   scl: GPIO9
   scan: true
+  frequency: 400kHz
+
+waveshare_io_ch32v003:
+  id: waveshare_io_hub
+  i2c_id: bus_a
+  address: 0x24
+
+# Backlight PWM ueber CH32V003
+output:
+  - platform: waveshare_io_ch32v003
+    id: wave_io_pwm_output
+    inverted: true
+    zero_means_zero: true
+    waveshare_io_ch32v003_id: waveshare_io_hub
+    safe_pwm_levels:
+      min_value: 0
+      max_value: 247
+
+light:
+  - platform: monochromatic
+    output: wave_io_pwm_output
+    name: "Display Backlight"
+    id: display_backlight
+    restore_mode: ALWAYS_ON
+    default_transition_length: 0ms
+
+# Backlight GPIO-Switch (pin 2 des CH32V003)
+switch:
+  - platform: gpio
+    name: "Backlight Switch"
+    id: backlight_switch
+    internal: true
+    pin:
+      waveshare_io_ch32v003: waveshare_io_hub
+      number: 2
+      mode: OUTPUT
+    restore_mode: ALWAYS_ON
 
 display:
   - platform: rpi_dpi_rgb
@@ -58,12 +106,15 @@ display:
       number: GPIO3
       ignore_strapping_warning: true
     pclk_pin: GPIO7
-    hsync_back_porch: 160
-    hsync_front_porch: 160
-    hsync_pulse_width: 10
-    vsync_back_porch: 23
-    vsync_front_porch: 12
-    vsync_pulse_width: 3
+    reset_pin:
+      waveshare_io_ch32v003: waveshare_io_hub
+      number: 3
+    hsync_back_porch:  152
+    hsync_front_porch:  48
+    hsync_pulse_width: 162
+    vsync_back_porch:   13
+    vsync_front_porch:   3
+    vsync_pulse_width:  45
     data_pins:
       red:
         - 1         # r3
@@ -85,25 +136,14 @@ display:
         - 17        # b6
         - 10        # b7
 
-interval:
-  - interval: 3s
-    then:
-      - lambda: |-
-          static uint8_t step = 0;
-          i2c::ErrorCode e;
-          switch (step % 4) {
-            case 0: { uint8_t d[] = {0xFF};             e = id(bus_a)->write(0x24, d, 1, true); ESP_LOGI("BL", "0xFF -> %d", (int)e); break; }
-            case 1: { uint8_t d[] = {0x01, 0xFF};       e = id(bus_a)->write(0x24, d, 2, true); ESP_LOGI("BL", "0x01,0xFF -> %d", (int)e); break; }
-            case 2: { uint8_t d[] = {0x02, 0xFF};       e = id(bus_a)->write(0x24, d, 2, true); ESP_LOGI("BL", "0x02,0xFF -> %d", (int)e); break; }
-            case 3: { uint8_t d[] = {0x03, 0x00, 0x01, 0xFF}; id(bus_a)->write(0x24, d, 2, true); uint8_t d2[] = {0x01, 0xFF}; e = id(bus_a)->write(0x24, d2, 2, true); ESP_LOGI("BL", "PCA-style -> %d", (int)e); break; }
-          }
-          step++;
-
 touchscreen:
   - platform: gt911
     id: waveshare_touch
-    address: 0x5D
     interrupt_pin: GPIO4
+    reset_pin:
+      waveshare_io_ch32v003: waveshare_io_hub
+      number: 1
+      mode: OUTPUT
 
 lvgl:
   displays:
