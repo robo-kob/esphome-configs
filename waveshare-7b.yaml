@@ -5,6 +5,13 @@ esphome:
   name_add_mac_suffix: false
   platformio_options:
     board_upload.maximum_ram_size: 524288
+  on_boot:
+    priority: 600
+    then:
+      - lambda: |-
+          // CH32V003 an I2C 0x24: Backlight (pin2) und Touch-Reset (pin1) einschalten
+          uint8_t cmd = 0xFF;
+          id(bus_a)->write(0x24, &cmd, 1, true);
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -34,6 +41,7 @@ wifi:
 captive_portal:
 
 i2c:
+  id: bus_a
   sda: GPIO8
   scl: GPIO9
   scan: true
