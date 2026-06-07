@@ -31,7 +31,7 @@ esphome:
             text: !lambda return std::string(LV_SYMBOL_MUTE) + " Mute";
         - lvgl.label.update:
             id: lbl_input
-            text: ""
+            text: "󰆦"
             text_font: fa5_icons
 
 esp32:
@@ -402,11 +402,11 @@ font:
       - file: "gfonts://Roboto"
         glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
   # Font Awesome 5 fuer Input-Symbol (sign-in-alt = Pfeil in Rahmen)
-  - file: "https://github.com/FortAwesome/Font-Awesome/raw/5.15.4/webfonts/fa-solid-900.ttf"
+  - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
     id: fa5_icons
     size: 22
     bpp: 4
-    glyphs: ""  # download (U+F019): Pfeil nach unten = Input
+    glyphs: "󰆦"  # mdi:import (U+F01A6)
 
 display:
   - platform: rpi_dpi_rgb
