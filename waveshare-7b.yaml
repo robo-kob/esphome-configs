@@ -155,8 +155,6 @@ globals:
     type: int
     restore_value: no
     initial_value: '-1'
-    restore_value: no
-    initial_value: 'false'
 
 sensor:
   - platform: homeassistant
