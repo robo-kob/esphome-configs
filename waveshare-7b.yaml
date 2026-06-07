@@ -28,10 +28,11 @@ esphome:
             text: !lambda return std::string(LV_SYMBOL_AUDIO);
         - lvgl.label.update:
             id: lbl_mute
-            text: !lambda return std::string(LV_SYMBOL_MUTE);
+            text: !lambda return std::string(LV_SYMBOL_MUTE) + " Mute";
         - lvgl.label.update:
             id: lbl_input
-            text: !lambda return std::string(LV_SYMBOL_SHUFFLE);
+            text: ""
+            text_font: fa5_icons
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -377,6 +378,12 @@ font:
     extras:
       - file: "gfonts://Roboto"
         glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
+  # Font Awesome 5 fuer Input-Symbol (sign-in-alt = Pfeil in Rahmen)
+  - file: "https://github.com/FortAwesome/Font-Awesome/raw/5.15.4/webfonts/fa-solid-900.ttf"
+    id: fa5_icons
+    size: 22
+    bpp: 4
+    glyphs: ""  # sign-in-alt (U+F2F6): Pfeil in Rahmen = Input
 
 display:
   - platform: rpi_dpi_rgb
@@ -442,14 +449,19 @@ touchscreen:
       - lambda: |-
           if (id(swipe_start_x) < 0) {
             id(swipe_start_x) = touch.x;
+            ESP_LOGI("swipe", "START x=%d", touch.x);
           }
           id(swipe_last_x) = touch.x;
     on_release:
+      - lambda: |-
+          ESP_LOGI("swipe", "RELEASE start=%d last=%d delta=%d",
+                   id(swipe_start_x), id(swipe_last_x),
+                   id(swipe_start_x) - id(swipe_last_x));
       - if:
           condition:
             lambda: |-
               return id(swipe_start_x) >= 0 && id(swipe_last_x) >= 0
-                     && (id(swipe_start_x) - id(swipe_last_x)) > 100;
+                     && (id(swipe_start_x) - id(swipe_last_x)) > 60;
           then:
             - lvgl.page.next:
                 animation: MOVE_LEFT
@@ -470,7 +482,7 @@ touchscreen:
           condition:
             lambda: |-
               return id(swipe_start_x) >= 0 && id(swipe_last_x) >= 0
-                     && (id(swipe_last_x) - id(swipe_start_x)) > 100;
+                     && (id(swipe_last_x) - id(swipe_start_x)) > 60;
           then:
             - lvgl.page.previous:
                 animation: MOVE_RIGHT
