@@ -28,7 +28,10 @@ esphome:
             text: !lambda return std::string(LV_SYMBOL_AUDIO);
         - lvgl.label.update:
             id: lbl_mute
-            text: "Mute"
+            text: !lambda return std::string(LV_SYMBOL_MUTE);
+        - lvgl.label.update:
+            id: lbl_input
+            text: !lambda return std::string(LV_SYMBOL_SHUFFLE);
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -589,7 +592,7 @@ lvgl:
             text: "Kein Titel"
             text_color: 0x1A1840
             text_font: roboto_36
-            text_align: left
+            text_align: center
             long_mode: scroll_circular
 
         # ── Artist ──────────────────────────────────────────────────────
@@ -602,7 +605,7 @@ lvgl:
             text: "-"
             text_color: 0x7B6FA0
             text_font: roboto_28
-            text_align: left
+            text_align: center
             long_mode: dot
 
         # ── Album ───────────────────────────────────────────────────────
@@ -615,7 +618,7 @@ lvgl:
             text: ""
             text_color: 0x9090AA
             text_font: roboto_24
-            text_align: left
+            text_align: center
             long_mode: dot
 
         # ── Quelle ──────────────────────────────────────────────────────
@@ -822,17 +825,16 @@ lvgl:
                     then:
                       - lvgl.label.update:
                           id: lbl_mute
-                          text: "Mute"
                           text_color: 0xCC2222
                     else:
                       - lvgl.label.update:
                           id: lbl_mute
-                          text: "Mute"
                           text_color: 0x444466
             widgets:
               - label:
                   id: lbl_mute
-                  text: "Mute"
+                  text: ""
+                  text_font: montserrat_20
                   align: center
                   text_color: 0x444466
 
@@ -855,7 +857,9 @@ lvgl:
                 - button.press: topping_input_toggle
             widgets:
               - label:
-                  text: "Input"
+                  id: lbl_input
+                  text: ""
+                  text_font: montserrat_20
                   align: center
                   text_color: 0x444466
 
