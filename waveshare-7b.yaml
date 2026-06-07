@@ -488,7 +488,7 @@ touchscreen:
                      && (id(swipe_start_x) - id(swipe_last_x)) > 100;
           then:
             - lvgl.page.next:
-                animation: FADE_ON
+                animation: FADE_IN
                 time: 200ms
             - lvgl.widget.update:
                 id: dot_1
@@ -509,7 +509,7 @@ touchscreen:
                      && (id(swipe_last_x) - id(swipe_start_x)) > 100;
           then:
             - lvgl.page.previous:
-                animation: FADE_ON
+                animation: FADE_IN
                 time: 200ms
             - lvgl.widget.update:
                 id: dot_1
@@ -548,7 +548,7 @@ lvgl:
               return indev != nullptr && lv_indev_get_gesture_dir(indev) == LV_DIR_LEFT;
           then:
             - lvgl.page.next:
-                animation: FADE_ON
+                animation: FADE_IN
                 time: 200ms
             - lvgl.widget.update:
                 id: dot_1
@@ -569,7 +569,7 @@ lvgl:
               return indev != nullptr && lv_indev_get_gesture_dir(indev) == LV_DIR_RIGHT;
           then:
             - lvgl.page.previous:
-                animation: FADE_ON
+                animation: FADE_IN
                 time: 200ms
             - lvgl.widget.update:
                 id: dot_1
