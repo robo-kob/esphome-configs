@@ -118,7 +118,7 @@ online_image:
     url: "http://192.168.1.33:8123/"
     format: jpeg
     type: RGB565
-    resize: 300x300
+    resize: 350x350
     on_download_finished:
       - lvgl.image.update:
           id: img_cover
@@ -332,6 +332,13 @@ button:
 
 font:
   - file: "gfonts://Roboto"
+    id: roboto_28
+    size: 28
+    bpp: 4
+    extras:
+      - file: "gfonts://Roboto"
+        glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
+  - file: "gfonts://Roboto"
     id: roboto_36
     size: 36
     bpp: 4
@@ -436,35 +443,12 @@ lvgl:
 
       widgets:
 
-        # ── Input Button (oben rechts) ──────────────────────────────────
-        - button:
-            id: btn_input
-            x: 874
-            y: 10
-            width: 140
-            height: 50
-            bg_color: 0xDDD8EE
-            bg_opa: cover
-            border_width: 1
-            border_color: 0xBBB5CC
-            radius: 25
-            pressed:
-              bg_color: 0xCCCADE
-            on_click:
-              then:
-                - button.press: topping_input_toggle
-            widgets:
-              - label:
-                  text: "Input"
-                  align: center
-                  text_color: 0x444466
-
-        # ── Album Cover (Kreis, rechte Seite) ──────────────────────────
+        # ── Album Cover (rechte Seite, gross) ─────────────────────────
         - obj:
-            x: 687
-            y: 120
-            width: 300
-            height: 300
+            x: 655
+            y: 50
+            width: 350
+            height: 350
             radius: 12
             bg_color: 0xCDCAE8
             border_color: 0xBBB8DA
@@ -486,8 +470,8 @@ lvgl:
         - label:
             id: lbl_title
             x: 50
-            y: 80
-            width: 610
+            y: 50
+            width: 590
             height: 50
             text: "Kein Titel"
             text_color: 0x1A1840
@@ -499,12 +483,12 @@ lvgl:
         - label:
             id: lbl_artist
             x: 50
-            y: 145
-            width: 580
-            height: 36
+            y: 110
+            width: 590
+            height: 42
             text: "-"
             text_color: 0x7B6FA0
-            text_font: roboto_24
+            text_font: roboto_28
             text_align: left
             long_mode: dot
 
@@ -512,12 +496,12 @@ lvgl:
         - label:
             id: lbl_album
             x: 50
-            y: 186
-            width: 580
-            height: 30
+            y: 158
+            width: 590
+            height: 36
             text: ""
-            text_color: 0xAAAAAA
-            text_font: roboto_18
+            text_color: 0x9090AA
+            text_font: roboto_24
             text_align: left
             long_mode: dot
 
@@ -525,8 +509,8 @@ lvgl:
         - label:
             id: lbl_source
             x: 50
-            y: 220
-            width: 580
+            y: 200
+            width: 590
             height: 26
             text: ""
             text_color: 0xBBBBBB
@@ -534,25 +518,23 @@ lvgl:
             text_align: left
             long_mode: dot
 
-        # ── Steuertasten-Reihe (zentriert in 640px) ─────────────────────
-        # Reihenfolge: Vol-  |  Prev  |  Play  |  Next  |  Vol+
-        # Breiten:      65        65      90       65        65
-        # Abstände:        15        15       15        15
-        # Gesamt: 65+15+65+15+90+15+65+15+65 = 410px
-        # Startpunkt: (640-410)/2 = 115
+        # ── Steuertasten-Reihe (zentriert in 645px) ─────────────────────
+        # Vol-(55) | Prev(55) | Play(75) | Next(55) | Vol+(55), Abstand 12px
+        # Gesamt: 55+12+55+12+75+12+55+12+55 = 343px
+        # Startpunkt: (645-343)/2 = 151
 
         # Vol-
         - button:
             id: btn_vol_down
-            x: 115
-            y: 262
-            width: 65
-            height: 65
+            x: 151
+            y: 272
+            width: 55
+            height: 55
             bg_color: 0xEEEBF8
             bg_opa: cover
             border_width: 2
             border_color: 0xCCCADE
-            radius: 32
+            radius: 27
             pressed:
               bg_color: 0xDDDAF0
             on_click:
@@ -562,22 +544,22 @@ lvgl:
               - label:
                   id: lbl_vol_down
                   text: ""
-                  text_font: montserrat_24
+                  text_font: montserrat_20
                   text_color: 0x555577
                   align: center
 
         # Prev
         - button:
             id: btn_prev
-            x: 195
-            y: 262
-            width: 65
-            height: 65
+            x: 218
+            y: 272
+            width: 55
+            height: 55
             bg_color: 0xEEEBF8
             bg_opa: cover
             border_width: 2
             border_color: 0xCCCADE
-            radius: 32
+            radius: 27
             pressed:
               bg_color: 0xDDDAF0
             on_click:
@@ -587,21 +569,21 @@ lvgl:
               - label:
                   id: lbl_prev
                   text: ""
-                  text_font: montserrat_24
+                  text_font: montserrat_20
                   text_color: 0x555577
                   align: center
 
         # Play/Pause (groß, lila Akzent)
         - button:
             id: btn_play_pause
-            x: 275
-            y: 247
-            width: 90
-            height: 90
+            x: 285
+            y: 260
+            width: 75
+            height: 75
             bg_color: 0x7B5EA7
             bg_opa: cover
             border_width: 0
-            radius: 45
+            radius: 37
             pressed:
               bg_color: 0x5B3E87
             on_click:
@@ -611,22 +593,22 @@ lvgl:
               - label:
                   id: lbl_play_pause
                   text: ""
-                  text_font: montserrat_28
+                  text_font: montserrat_24
                   text_color: 0xFFFFFF
                   align: center
 
         # Next
         - button:
             id: btn_next
-            x: 380
-            y: 262
-            width: 65
-            height: 65
+            x: 372
+            y: 272
+            width: 55
+            height: 55
             bg_color: 0xEEEBF8
             bg_opa: cover
             border_width: 2
             border_color: 0xCCCADE
-            radius: 32
+            radius: 27
             pressed:
               bg_color: 0xDDDAF0
             on_click:
@@ -636,22 +618,22 @@ lvgl:
               - label:
                   id: lbl_next
                   text: ""
-                  text_font: montserrat_24
+                  text_font: montserrat_20
                   text_color: 0x555577
                   align: center
 
         # Vol+
         - button:
             id: btn_vol_up
-            x: 460
-            y: 262
-            width: 65
-            height: 65
+            x: 439
+            y: 272
+            width: 55
+            height: 55
             bg_color: 0xEEEBF8
             bg_opa: cover
             border_width: 2
             border_color: 0xCCCADE
-            radius: 32
+            radius: 27
             pressed:
               bg_color: 0xDDDAF0
             on_click:
@@ -661,7 +643,7 @@ lvgl:
               - label:
                   id: lbl_vol_up
                   text: ""
-                  text_font: montserrat_24
+                  text_font: montserrat_20
                   text_color: 0x555577
                   align: center
 
@@ -669,8 +651,8 @@ lvgl:
         - bar:
             id: progress_bar
             x: 50
-            y: 380
-            width: 560
+            y: 370
+            width: 590
             height: 8
             min_value: 0
             max_value: 100
@@ -685,7 +667,7 @@ lvgl:
         - label:
             id: lbl_time_pos
             x: 50
-            y: 396
+            y: 385
             text: "0:00"
             text_color: 0x9090AA
             text_font: roboto_18
@@ -693,8 +675,8 @@ lvgl:
         # Zeit Dauer
         - label:
             id: lbl_time_dur
-            x: 500
-            y: 396
+            x: 530
+            y: 385
             width: 110
             text: "0:00"
             text_color: 0x9090AA
@@ -705,7 +687,7 @@ lvgl:
         - button:
             id: btn_mute
             x: 50
-            y: 455
+            y: 465
             width: 130
             height: 52
             bg_color: 0xDDD8EE
@@ -736,5 +718,28 @@ lvgl:
               - label:
                   id: lbl_mute
                   text: "Mute"
+                  align: center
+                  text_color: 0x444466
+
+        # ── Input Button (neben Mute) ────────────────────────────────────
+        - button:
+            id: btn_input
+            x: 200
+            y: 465
+            width: 130
+            height: 52
+            bg_color: 0xDDD8EE
+            bg_opa: cover
+            border_width: 1
+            border_color: 0xBBB5CC
+            radius: 26
+            pressed:
+              bg_color: 0xCCCADE
+            on_click:
+              then:
+                - button.press: topping_input_toggle
+            widgets:
+              - label:
+                  text: "Input"
                   align: center
                   text_color: 0x444466
