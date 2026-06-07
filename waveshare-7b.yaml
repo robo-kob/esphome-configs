@@ -444,28 +444,42 @@ lvgl:
           id: display_backlight
           brightness: 10%
   on_gesture:
-    - direction: LEFT
-      then:
-        - lvgl.page.next:
-            animation: MOVE_LEFT
-            time: 300ms
-        - lvgl.label.update:
-            id: dot_1
-            text_color: 0xBBBBBB
-        - lvgl.label.update:
-            id: dot_2
-            text_color: 0x7B5EA7
-    - direction: RIGHT
-      then:
-        - lvgl.page.previous:
-            animation: MOVE_RIGHT
-            time: 300ms
-        - lvgl.label.update:
-            id: dot_1
-            text_color: 0x7B5EA7
-        - lvgl.label.update:
-            id: dot_2
-            text_color: 0xBBBBBB
+    then:
+      - if:
+          condition:
+            lambda: return lv_indev_get_gesture_dir(lv_indev_get_act()) == LV_DIR_LEFT;
+          then:
+            - lvgl.page.next:
+                animation: MOVE_LEFT
+                time: 300ms
+            - lvgl.label.update:
+                id: dot_1
+                text_color: 0xBBBBBB
+            - lvgl.label.update:
+                id: dot_2
+                text_color: 0x7B5EA7
+            - lvgl.label.update:
+                id: dot_1b
+                text_color: 0xBBBBBB
+            - lvgl.label.update:
+                id: dot_2b
+                text_color: 0x7B5EA7
+          else:
+            - lvgl.page.previous:
+                animation: MOVE_RIGHT
+                time: 300ms
+            - lvgl.label.update:
+                id: dot_1
+                text_color: 0x7B5EA7
+            - lvgl.label.update:
+                id: dot_2
+                text_color: 0xBBBBBB
+            - lvgl.label.update:
+                id: dot_1b
+                text_color: 0x7B5EA7
+            - lvgl.label.update:
+                id: dot_2b
+                text_color: 0xBBBBBB
 
   pages:
     - id: main_page
