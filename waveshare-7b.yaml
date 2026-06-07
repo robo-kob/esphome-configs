@@ -233,6 +233,30 @@ text_sensor:
             return x.empty() ? std::string("") : "Quelle: " + x;
 
   - platform: homeassistant
+    id: weather_state_sensor
+    entity_id: weather.forecast_home
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_weather_condition
+          text: !lambda |-
+            if (x == "sunny")           return std::string("Sonnig");
+            if (x == "clear-night")     return std::string("Klare Nacht");
+            if (x == "partlycloudy")    return std::string("Teils bewölkt");
+            if (x == "cloudy")          return std::string("Bewölkt");
+            if (x == "rainy")           return std::string("Regen");
+            if (x == "pouring")         return std::string("Starkregen");
+            if (x == "snowy")           return std::string("Schnee");
+            if (x == "snowy-rainy")     return std::string("Schneeregen");
+            if (x == "fog")             return std::string("Nebel");
+            if (x == "lightning")       return std::string("Gewitter");
+            if (x == "lightning-rainy") return std::string("Gewitterregen");
+            if (x == "windy")           return std::string("Windig");
+            if (x == "hail")            return std::string("Hagel");
+            if (x == "exceptional")     return std::string("Außergewöhnlich");
+            return x;
+
+  - platform: homeassistant
     id: mxn10_entity_picture
     entity_id: media_player.streamer_lossles_mxn10
     attribute: entity_picture
@@ -243,6 +267,149 @@ text_sensor:
             id(album_cover).set_url(("http://192.168.1.33:8123" + x).c_str());
           }
       - component.update: album_cover
+
+  # ── Seite 2: Wetterstation ──────────────────────────────────────────
+  - platform: homeassistant
+    id: outdoor_temp_sensor
+    entity_id: sensor.gw1100a_outdoor_temperature
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_outdoor_temp
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.1f°C", x);
+            return std::string(buf);
+
+  - platform: homeassistant
+    id: outdoor_humidity_sensor
+    entity_id: sensor.gw1100a_humidity
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_humidity
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.0f%%", x);
+            return std::string(buf);
+
+  - platform: homeassistant
+    id: uv_index_sensor
+    entity_id: sensor.gw1100a_uv_index
+    internal: true
+    on_value:
+      - if:
+          condition:
+            lambda: return x > 3;
+          then:
+            - lvgl.widget.update:
+                id: lbl_uv
+                hidden: false
+            - lvgl.label.update:
+                id: lbl_uv
+                text: !lambda |-
+                  char buf[16];
+                  snprintf(buf, sizeof(buf), "UV-Index: %.0f", x);
+                  if (x >= 8) return std::string(buf) + " (sehr hoch)";
+                  if (x >= 6) return std::string(buf) + " (hoch)";
+                  return std::string(buf) + " (mittel)";
+          else:
+            - lvgl.widget.update:
+                id: lbl_uv
+                hidden: true
+
+  - platform: homeassistant
+    id: rain_24h_sensor
+    entity_id: sensor.gw1100a_24h_rain
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_rain
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.1f mm", x);
+            return std::string(buf);
+
+  # ── Seite 2: Energie ────────────────────────────────────────────────
+  - platform: homeassistant
+    id: house_power_sensor
+    entity_id: sensor.poweropti_35fd8_lokal_leistung
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_house_power
+          text: !lambda |-
+            char buf[16];
+            if (x >= 1000.0f) snprintf(buf, sizeof(buf), "%.2f kW", x/1000.0f);
+            else snprintf(buf, sizeof(buf), "%.0f W", x);
+            return std::string(buf);
+      - if:
+          condition:
+            lambda: |-
+              float solar = id(solar_power_sensor).has_state() ? id(solar_power_sensor).state : 0.0f;
+              return (solar - x) >= 0;
+          then:
+            - lvgl.label.update:
+                id: lbl_power_balance
+                text_color: 0x228822
+                text: !lambda |-
+                  float solar = id(solar_power_sensor).has_state() ? id(solar_power_sensor).state : 0.0f;
+                  float b = solar - x;
+                  char buf[16];
+                  if (b >= 1000.0f) snprintf(buf, sizeof(buf), "+%.2f kW", b/1000.0f);
+                  else snprintf(buf, sizeof(buf), "+%.0f W", b);
+                  return std::string(buf);
+          else:
+            - lvgl.label.update:
+                id: lbl_power_balance
+                text_color: 0xCC2222
+                text: !lambda |-
+                  float solar = id(solar_power_sensor).has_state() ? id(solar_power_sensor).state : 0.0f;
+                  float b = solar - x;
+                  char buf[16];
+                  if (b <= -1000.0f) snprintf(buf, sizeof(buf), "%.2f kW", b/1000.0f);
+                  else snprintf(buf, sizeof(buf), "%.0f W", b);
+                  return std::string(buf);
+
+  - platform: homeassistant
+    id: solar_power_sensor
+    entity_id: sensor.solarbank_2_e1600_pro_solarleistung
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_solar_power
+          text: !lambda |-
+            char buf[16];
+            if (x >= 1000.0f) snprintf(buf, sizeof(buf), "%.2f kW", x/1000.0f);
+            else snprintf(buf, sizeof(buf), "%.0f W", x);
+            return std::string(buf);
+      - if:
+          condition:
+            lambda: |-
+              float house = id(house_power_sensor).has_state() ? id(house_power_sensor).state : 0.0f;
+              return (x - house) >= 0;
+          then:
+            - lvgl.label.update:
+                id: lbl_power_balance
+                text_color: 0x228822
+                text: !lambda |-
+                  float house = id(house_power_sensor).has_state() ? id(house_power_sensor).state : 0.0f;
+                  float b = x - house;
+                  char buf[16];
+                  if (b >= 1000.0f) snprintf(buf, sizeof(buf), "+%.2f kW", b/1000.0f);
+                  else snprintf(buf, sizeof(buf), "+%.0f W", b);
+                  return std::string(buf);
+          else:
+            - lvgl.label.update:
+                id: lbl_power_balance
+                text_color: 0xCC2222
+                text: !lambda |-
+                  float house = id(house_power_sensor).has_state() ? id(house_power_sensor).state : 0.0f;
+                  float b = x - house;
+                  char buf[16];
+                  if (b <= -1000.0f) snprintf(buf, sizeof(buf), "%.2f kW", b/1000.0f);
+                  else snprintf(buf, sizeof(buf), "%.0f W", b);
+                  return std::string(buf);
 
 interval:
   # Liest LVGL-Touch-Position alle 50ms fuer Wisch-Erkennung
@@ -952,17 +1119,165 @@ lvgl:
                     bg_color: 0x7B5EA7
 
     # ════════════════════════════════════════════════════════════════════
-    # Seite 2 — Platzhalter (Inhalt nach Wunsch)
+    # Seite 2 — Wetter & Energie
     # ════════════════════════════════════════════════════════════════════
     - id: page_2
       bg_color: 0xEEEBF8
       bg_opa: cover
       widgets:
+
+        # ── Trennlinie Mitte ─────────────────────────────────────────
+        - obj:
+            x: 508
+            y: 20
+            width: 2
+            height: 535
+            bg_color: 0xCCCADE
+            bg_opa: cover
+            border_width: 0
+            radius: 0
+
+        # ════════════ LINKS: Außen + Wetter ════════════
+
+        # Abschnittsüberschrift
         - label:
-            text: "Seite 2"
-            align: center
-            text_color: 0x1A1840
+            x: 30
+            y: 25
+            text: "Außen"
+            text_font: roboto_24
+            text_color: 0x7B5EA7
+
+        # Große Temperatur
+        - label:
+            id: lbl_outdoor_temp
+            x: 30
+            y: 65
+            width: 460
+            height: 55
+            text: "--°C"
             text_font: roboto_36
+            text_color: 0x1A1840
+            text_align: left
+
+        # Feuchtigkeit
+        - label:
+            x: 30
+            y: 132
+            text: "Feuchtigkeit"
+            text_font: roboto_18
+            text_color: 0x9090AA
+        - label:
+            id: lbl_humidity
+            x: 230
+            y: 132
+            width: 180
+            text: "--%"
+            text_font: roboto_18
+            text_color: 0x1A1840
+
+        # Regen 24h
+        - label:
+            x: 30
+            y: 165
+            text: "Regen (24h)"
+            text_font: roboto_18
+            text_color: 0x9090AA
+        - label:
+            id: lbl_rain
+            x: 230
+            y: 165
+            width: 180
+            text: "-- mm"
+            text_font: roboto_18
+            text_color: 0x1A1840
+
+        # Wetterzustand
+        - label:
+            id: lbl_weather_condition
+            x: 30
+            y: 210
+            width: 460
+            height: 36
+            text: "--"
+            text_font: roboto_24
+            text_color: 0x444466
+            long_mode: dot
+
+        # UV-Index (versteckt wenn <= 3)
+        - label:
+            id: lbl_uv
+            x: 30
+            y: 260
+            width: 460
+            height: 30
+            text: "UV --"
+            text_font: roboto_18
+            text_color: 0xFF8800
+            hidden: true
+
+        # ════════════ RECHTS: Energie ════════════
+
+        # Abschnittsüberschrift
+        - label:
+            x: 540
+            y: 25
+            text: "Energie"
+            text_font: roboto_24
+            text_color: 0x7B5EA7
+
+        # Haus-Verbrauch
+        - label:
+            x: 540
+            y: 72
+            text: "Haus"
+            text_font: roboto_18
+            text_color: 0x9090AA
+        - label:
+            id: lbl_house_power
+            x: 540
+            y: 96
+            width: 460
+            height: 55
+            text: "-- W"
+            text_font: roboto_36
+            text_color: 0xCC2222
+            text_align: left
+
+        # Solar-Leistung
+        - label:
+            x: 540
+            y: 168
+            text: "Solar"
+            text_font: roboto_18
+            text_color: 0x9090AA
+        - label:
+            id: lbl_solar_power
+            x: 540
+            y: 192
+            width: 460
+            height: 55
+            text: "-- W"
+            text_font: roboto_36
+            text_color: 0x228822
+            text_align: left
+
+        # Energie-Bilanz
+        - label:
+            x: 540
+            y: 265
+            text: "Bilanz"
+            text_font: roboto_18
+            text_color: 0x9090AA
+        - label:
+            id: lbl_power_balance
+            x: 540
+            y: 290
+            width: 460
+            height: 42
+            text: "-- W"
+            text_font: roboto_28
+            text_color: 0x444466
+            text_align: left
 
         # Navigationspunkte
         - button:
