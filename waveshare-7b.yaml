@@ -465,11 +465,10 @@ lvgl:
             y: 120
             width: 300
             height: 300
-            radius: 150
-            clip_corner: true
+            radius: 12
             bg_color: 0xCDCAE8
             border_color: 0xBBB8DA
-            border_width: 3
+            border_width: 2
             pad_all: 0
             widgets:
               - label:
