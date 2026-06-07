@@ -156,6 +156,10 @@ globals:
     type: int
     restore_value: no
     initial_value: '-1'
+  - id: swipe_tracking
+    type: bool
+    restore_value: no
+    initial_value: 'false'
 
 sensor:
   - platform: homeassistant
@@ -241,6 +245,25 @@ text_sensor:
       - component.update: album_cover
 
 interval:
+  # Liest LVGL-Touch-Position alle 50ms fuer Wisch-Erkennung
+  # (on_touch feuert nur einmal; LVGL trackt kontinuierlich)
+  - interval: 50ms
+    then:
+      - lambda: |-
+          if (!id(swipe_tracking)) return;
+          lv_indev_t *indev = lv_indev_get_next(nullptr);
+          while (indev != nullptr) {
+            if (lv_indev_get_type(indev) == LV_INDEV_TYPE_POINTER) {
+              lv_point_t pt;
+              lv_indev_get_point(indev, &pt);
+              if (pt.x >= 0 && pt.x <= 1024) {
+                id(swipe_last_x) = (int)pt.x;
+              }
+              break;
+            }
+            indev = lv_indev_get_next(indev);
+          }
+
   - interval: 1s
     then:
       - if:
@@ -449,11 +472,12 @@ touchscreen:
       - lambda: |-
           if (id(swipe_start_x) < 0) {
             id(swipe_start_x) = touch.x;
-            ESP_LOGI("swipe", "START x=%d", touch.x);
+            id(swipe_last_x)  = touch.x;
+            id(swipe_tracking) = true;
           }
-          id(swipe_last_x) = touch.x;
     on_release:
       - lambda: |-
+          id(swipe_tracking) = false;
           ESP_LOGI("swipe", "RELEASE start=%d last=%d delta=%d",
                    id(swipe_start_x), id(swipe_last_x),
                    id(swipe_start_x) - id(swipe_last_x));
