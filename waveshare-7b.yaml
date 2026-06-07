@@ -39,6 +39,15 @@ esp32:
     sdkconfig_options:
       CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
       CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
+      # Performance: LVGL-Zeichenroutinen in schnellen IRAM
+      CONFIG_LV_ATTRIBUTE_FAST_MEM_USE_IRAM: "y"
+      # Code und Read-Only-Daten in PSRAM -> IRAM fuer LVGL frei
+      CONFIG_SPIRAM_FETCH_INSTRUCTIONS: "y"
+      CONFIG_SPIRAM_RODATA: "y"
+      # LVGL auf Core 1, WiFi bleibt auf Core 0
+      CONFIG_ESP_MAIN_TASK_AFFINITY_CPU1: "y"
+      # Compiler auf Geschwindigkeit optimieren
+      CONFIG_COMPILER_OPTIMIZATION_PERF: "y"
 
 psram:
   mode: octal
