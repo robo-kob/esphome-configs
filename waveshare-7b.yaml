@@ -178,6 +178,131 @@ sensor:
           id(local_position_s) = x;
           id(local_position_ts) = millis();
 
+
+  # ── Seite 2: Wetterstation ──────────────────────────────────────────
+  - platform: homeassistant
+    id: outdoor_temp_sensor
+    entity_id: sensor.gw1100a_outdoor_temperature
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_outdoor_temp
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.1f°C", x);
+            return std::string(buf);
+
+  - platform: homeassistant
+    id: outdoor_humidity_sensor
+    entity_id: sensor.gw1100a_humidity
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_humidity
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.0f%%", x);
+            return std::string(buf);
+
+  - platform: homeassistant
+    id: uv_index_sensor
+    entity_id: sensor.gw1100a_uv_index
+    internal: true
+    on_value:
+      - if:
+          condition:
+            lambda: return x > 3;
+          then:
+            - lvgl.widget.update:
+                id: lbl_uv
+                hidden: false
+            - lvgl.label.update:
+                id: lbl_uv
+                text: !lambda |-
+                  char buf[16];
+                  snprintf(buf, sizeof(buf), "UV-Index: %.0f", x);
+                  if (x >= 8) return std::string(buf) + " (sehr hoch)";
+                  if (x >= 6) return std::string(buf) + " (hoch)";
+                  return std::string(buf) + " (mittel)";
+          else:
+            - lvgl.widget.update:
+                id: lbl_uv
+                hidden: true
+
+  - platform: homeassistant
+    id: rain_24h_sensor
+    entity_id: sensor.gw1100a_24h_rain
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_rain
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.1f mm", x);
+            return std::string(buf);
+
+  # Wettervorhersage Temperaturen
+  - platform: homeassistant
+    id: fc1_temp_sensor
+    entity_id: sensor.forecast_tag_1_temp
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_fc1_temp
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.0f°C", x);
+            return std::string(buf);
+
+  - platform: homeassistant
+    id: fc2_temp_sensor
+    entity_id: sensor.forecast_tag_2_temp
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_fc2_temp
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.0f°C", x);
+            return std::string(buf);
+
+  - platform: homeassistant
+    id: fc3_temp_sensor
+    entity_id: sensor.forecast_tag_3_temp
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_fc3_temp
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.0f°C", x);
+            return std::string(buf);
+
+  # ── Seite 2: Energie ────────────────────────────────────────────────
+  - platform: homeassistant
+    id: house_power_sensor
+    entity_id: sensor.poweropti_35fd8_lokal_leistung
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_house_power
+          text: !lambda |-
+            char buf[16];
+            if (x >= 1000.0f) snprintf(buf, sizeof(buf), "%.2f kW", x/1000.0f);
+            else snprintf(buf, sizeof(buf), "%.0f W", x);
+            return std::string(buf);
+  - platform: homeassistant
+    id: solar_power_sensor
+    entity_id: sensor.solarbank_2_e1600_pro_solarleistung
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_solar_power
+          text: !lambda |-
+            char buf[16];
+            if (x >= 1000.0f) snprintf(buf, sizeof(buf), "%.2f kW", x/1000.0f);
+            else snprintf(buf, sizeof(buf), "%.0f W", x);
+            return std::string(buf);
 text_sensor:
   - platform: homeassistant
     id: mxn10_state
@@ -360,130 +485,6 @@ text_sensor:
           }
       - component.update: album_cover
 
-  # ── Seite 2: Wetterstation ──────────────────────────────────────────
-  - platform: homeassistant
-    id: outdoor_temp_sensor
-    entity_id: sensor.gw1100a_outdoor_temperature
-    internal: true
-    on_value:
-      - lvgl.label.update:
-          id: lbl_outdoor_temp
-          text: !lambda |-
-            char buf[16];
-            snprintf(buf, sizeof(buf), "%.1f°C", x);
-            return std::string(buf);
-
-  - platform: homeassistant
-    id: outdoor_humidity_sensor
-    entity_id: sensor.gw1100a_humidity
-    internal: true
-    on_value:
-      - lvgl.label.update:
-          id: lbl_humidity
-          text: !lambda |-
-            char buf[16];
-            snprintf(buf, sizeof(buf), "%.0f%%", x);
-            return std::string(buf);
-
-  - platform: homeassistant
-    id: uv_index_sensor
-    entity_id: sensor.gw1100a_uv_index
-    internal: true
-    on_value:
-      - if:
-          condition:
-            lambda: return x > 3;
-          then:
-            - lvgl.widget.update:
-                id: lbl_uv
-                hidden: false
-            - lvgl.label.update:
-                id: lbl_uv
-                text: !lambda |-
-                  char buf[16];
-                  snprintf(buf, sizeof(buf), "UV-Index: %.0f", x);
-                  if (x >= 8) return std::string(buf) + " (sehr hoch)";
-                  if (x >= 6) return std::string(buf) + " (hoch)";
-                  return std::string(buf) + " (mittel)";
-          else:
-            - lvgl.widget.update:
-                id: lbl_uv
-                hidden: true
-
-  - platform: homeassistant
-    id: rain_24h_sensor
-    entity_id: sensor.gw1100a_24h_rain
-    internal: true
-    on_value:
-      - lvgl.label.update:
-          id: lbl_rain
-          text: !lambda |-
-            char buf[16];
-            snprintf(buf, sizeof(buf), "%.1f mm", x);
-            return std::string(buf);
-
-  # Wettervorhersage Temperaturen
-  - platform: homeassistant
-    id: fc1_temp_sensor
-    entity_id: sensor.forecast_tag_1_temp
-    internal: true
-    on_value:
-      - lvgl.label.update:
-          id: lbl_fc1_temp
-          text: !lambda |-
-            char buf[16];
-            snprintf(buf, sizeof(buf), "%.0f°C", x);
-            return std::string(buf);
-
-  - platform: homeassistant
-    id: fc2_temp_sensor
-    entity_id: sensor.forecast_tag_2_temp
-    internal: true
-    on_value:
-      - lvgl.label.update:
-          id: lbl_fc2_temp
-          text: !lambda |-
-            char buf[16];
-            snprintf(buf, sizeof(buf), "%.0f°C", x);
-            return std::string(buf);
-
-  - platform: homeassistant
-    id: fc3_temp_sensor
-    entity_id: sensor.forecast_tag_3_temp
-    internal: true
-    on_value:
-      - lvgl.label.update:
-          id: lbl_fc3_temp
-          text: !lambda |-
-            char buf[16];
-            snprintf(buf, sizeof(buf), "%.0f°C", x);
-            return std::string(buf);
-
-  # ── Seite 2: Energie ────────────────────────────────────────────────
-  - platform: homeassistant
-    id: house_power_sensor
-    entity_id: sensor.poweropti_35fd8_lokal_leistung
-    internal: true
-    on_value:
-      - lvgl.label.update:
-          id: lbl_house_power
-          text: !lambda |-
-            char buf[16];
-            if (x >= 1000.0f) snprintf(buf, sizeof(buf), "%.2f kW", x/1000.0f);
-            else snprintf(buf, sizeof(buf), "%.0f W", x);
-            return std::string(buf);
-  - platform: homeassistant
-    id: solar_power_sensor
-    entity_id: sensor.solarbank_2_e1600_pro_solarleistung
-    internal: true
-    on_value:
-      - lvgl.label.update:
-          id: lbl_solar_power
-          text: !lambda |-
-            char buf[16];
-            if (x >= 1000.0f) snprintf(buf, sizeof(buf), "%.2f kW", x/1000.0f);
-            else snprintf(buf, sizeof(buf), "%.0f W", x);
-            return std::string(buf);
 interval:
   # Liest LVGL-Touch-Position alle 50ms fuer Wisch-Erkennung
   # (on_touch feuert nur einmal; LVGL trackt kontinuierlich)
