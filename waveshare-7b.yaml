@@ -485,11 +485,11 @@ touchscreen:
           condition:
             lambda: |-
               return id(swipe_start_x) >= 0 && id(swipe_last_x) >= 0
-                     && (id(swipe_start_x) - id(swipe_last_x)) > 60;
+                     && (id(swipe_start_x) - id(swipe_last_x)) > 100;
           then:
             - lvgl.page.next:
-                animation: MOVE_LEFT
-                time: 300ms
+                animation: FADE_ON
+                time: 200ms
             - lvgl.widget.update:
                 id: dot_1
                 bg_color: 0xCCCCCC
@@ -506,11 +506,11 @@ touchscreen:
           condition:
             lambda: |-
               return id(swipe_start_x) >= 0 && id(swipe_last_x) >= 0
-                     && (id(swipe_last_x) - id(swipe_start_x)) > 60;
+                     && (id(swipe_last_x) - id(swipe_start_x)) > 100;
           then:
             - lvgl.page.previous:
-                animation: MOVE_RIGHT
-                time: 300ms
+                animation: FADE_ON
+                time: 200ms
             - lvgl.widget.update:
                 id: dot_1
                 bg_color: 0x7B5EA7
@@ -548,8 +548,8 @@ lvgl:
               return indev != nullptr && lv_indev_get_gesture_dir(indev) == LV_DIR_LEFT;
           then:
             - lvgl.page.next:
-                animation: MOVE_LEFT
-                time: 300ms
+                animation: FADE_ON
+                time: 200ms
             - lvgl.widget.update:
                 id: dot_1
                 bg_color: 0xCCCCCC
@@ -569,8 +569,8 @@ lvgl:
               return indev != nullptr && lv_indev_get_gesture_dir(indev) == LV_DIR_RIGHT;
           then:
             - lvgl.page.previous:
-                animation: MOVE_RIGHT
-                time: 300ms
+                animation: FADE_ON
+                time: 200ms
             - lvgl.widget.update:
                 id: dot_1
                 bg_color: 0x7B5EA7
