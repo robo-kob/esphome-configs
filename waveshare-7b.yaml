@@ -405,20 +405,20 @@ text_sensor:
       - lvgl.label.update:
           id: lbl_fc1_icon
           text: !lambda |-
-              if (x == "sunny") return std::string(u8"\U000F0599");
-              if (x == "clear-night") return std::string(u8"\U000F0594");
-              if (x == "partlycloudy") return std::string(u8"\U000F0595");
-              if (x == "cloudy") return std::string(u8"\U000F0590");
-              if (x == "rainy") return std::string(u8"\U000F0597");
-              if (x == "pouring") return std::string(u8"\U000F0596");
-              if (x == "snowy") return std::string(u8"\U000F0598");
-              if (x == "snowy-rainy") return std::string(u8"\U000F0598");
-              if (x == "fog") return std::string(u8"\U000F0591");
-              if (x == "lightning") return std::string(u8"\U000F0593");
-              if (x == "lightning-rainy") return std::string(u8"\U000F067E");
-              if (x == "windy") return std::string(u8"\U000F059D");
-              if (x == "hail") return std::string(u8"\U000F0592");
-              return std::string(u8"\U000F0595");
+              if (x == "sunny") return std::string("\U000F0599");
+              if (x == "clear-night") return std::string("\U000F0594");
+              if (x == "partlycloudy") return std::string("\U000F0595");
+              if (x == "cloudy") return std::string("\U000F0590");
+              if (x == "rainy") return std::string("\U000F0597");
+              if (x == "pouring") return std::string("\U000F0596");
+              if (x == "snowy") return std::string("\U000F0598");
+              if (x == "snowy-rainy") return std::string("\U000F0598");
+              if (x == "fog") return std::string("\U000F0591");
+              if (x == "lightning") return std::string("\U000F0593");
+              if (x == "lightning-rainy") return std::string("\U000F067E");
+              if (x == "windy") return std::string("\U000F059D");
+              if (x == "hail") return std::string("\U000F0592");
+              return std::string("\U000F0595");
 
   - platform: homeassistant
     id: fc2_cond_sensor
@@ -443,20 +443,20 @@ text_sensor:
       - lvgl.label.update:
           id: lbl_fc2_icon
           text: !lambda |-
-              if (x == "sunny") return std::string(u8"\U000F0599");
-              if (x == "clear-night") return std::string(u8"\U000F0594");
-              if (x == "partlycloudy") return std::string(u8"\U000F0595");
-              if (x == "cloudy") return std::string(u8"\U000F0590");
-              if (x == "rainy") return std::string(u8"\U000F0597");
-              if (x == "pouring") return std::string(u8"\U000F0596");
-              if (x == "snowy") return std::string(u8"\U000F0598");
-              if (x == "snowy-rainy") return std::string(u8"\U000F0598");
-              if (x == "fog") return std::string(u8"\U000F0591");
-              if (x == "lightning") return std::string(u8"\U000F0593");
-              if (x == "lightning-rainy") return std::string(u8"\U000F067E");
-              if (x == "windy") return std::string(u8"\U000F059D");
-              if (x == "hail") return std::string(u8"\U000F0592");
-              return std::string(u8"\U000F0595");
+              if (x == "sunny") return std::string("\U000F0599");
+              if (x == "clear-night") return std::string("\U000F0594");
+              if (x == "partlycloudy") return std::string("\U000F0595");
+              if (x == "cloudy") return std::string("\U000F0590");
+              if (x == "rainy") return std::string("\U000F0597");
+              if (x == "pouring") return std::string("\U000F0596");
+              if (x == "snowy") return std::string("\U000F0598");
+              if (x == "snowy-rainy") return std::string("\U000F0598");
+              if (x == "fog") return std::string("\U000F0591");
+              if (x == "lightning") return std::string("\U000F0593");
+              if (x == "lightning-rainy") return std::string("\U000F067E");
+              if (x == "windy") return std::string("\U000F059D");
+              if (x == "hail") return std::string("\U000F0592");
+              return std::string("\U000F0595");
 
   - platform: homeassistant
     id: fc3_cond_sensor
@@ -481,20 +481,20 @@ text_sensor:
       - lvgl.label.update:
           id: lbl_fc3_icon
           text: !lambda |-
-              if (x == "sunny") return std::string(u8"\U000F0599");
-              if (x == "clear-night") return std::string(u8"\U000F0594");
-              if (x == "partlycloudy") return std::string(u8"\U000F0595");
-              if (x == "cloudy") return std::string(u8"\U000F0590");
-              if (x == "rainy") return std::string(u8"\U000F0597");
-              if (x == "pouring") return std::string(u8"\U000F0596");
-              if (x == "snowy") return std::string(u8"\U000F0598");
-              if (x == "snowy-rainy") return std::string(u8"\U000F0598");
-              if (x == "fog") return std::string(u8"\U000F0591");
-              if (x == "lightning") return std::string(u8"\U000F0593");
-              if (x == "lightning-rainy") return std::string(u8"\U000F067E");
-              if (x == "windy") return std::string(u8"\U000F059D");
-              if (x == "hail") return std::string(u8"\U000F0592");
-              return std::string(u8"\U000F0595");
+              if (x == "sunny") return std::string("\U000F0599");
+              if (x == "clear-night") return std::string("\U000F0594");
+              if (x == "partlycloudy") return std::string("\U000F0595");
+              if (x == "cloudy") return std::string("\U000F0590");
+              if (x == "rainy") return std::string("\U000F0597");
+              if (x == "pouring") return std::string("\U000F0596");
+              if (x == "snowy") return std::string("\U000F0598");
+              if (x == "snowy-rainy") return std::string("\U000F0598");
+              if (x == "fog") return std::string("\U000F0591");
+              if (x == "lightning") return std::string("\U000F0593");
+              if (x == "lightning-rainy") return std::string("\U000F067E");
+              if (x == "windy") return std::string("\U000F059D");
+              if (x == "hail") return std::string("\U000F0592");
+              return std::string("\U000F0595");
 
   # Wettervorhersage Tagnamen (Mo, Di, Mi ...)
   - platform: homeassistant
