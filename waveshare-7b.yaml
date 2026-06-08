@@ -402,6 +402,23 @@ text_sensor:
             if (x == "lightning-rainy") return std::string("Gewitterregen");
             if (x == "windy")           return std::string("Windig");
             return x;
+      - lvgl.label.update:
+          id: lbl_fc1_icon
+          text: !lambda |-
+              if (x == "sunny") return std::string(u8"\U000F0599");
+              if (x == "clear-night") return std::string(u8"\U000F0594");
+              if (x == "partlycloudy") return std::string(u8"\U000F0595");
+              if (x == "cloudy") return std::string(u8"\U000F0590");
+              if (x == "rainy") return std::string(u8"\U000F0597");
+              if (x == "pouring") return std::string(u8"\U000F0596");
+              if (x == "snowy") return std::string(u8"\U000F0598");
+              if (x == "snowy-rainy") return std::string(u8"\U000F0598");
+              if (x == "fog") return std::string(u8"\U000F0591");
+              if (x == "lightning") return std::string(u8"\U000F0593");
+              if (x == "lightning-rainy") return std::string(u8"\U000F067E");
+              if (x == "windy") return std::string(u8"\U000F059D");
+              if (x == "hail") return std::string(u8"\U000F0592");
+              return std::string(u8"\U000F0595");
 
   - platform: homeassistant
     id: fc2_cond_sensor
@@ -423,6 +440,23 @@ text_sensor:
             if (x == "lightning-rainy") return std::string("Gewitterregen");
             if (x == "windy")           return std::string("Windig");
             return x;
+      - lvgl.label.update:
+          id: lbl_fc2_icon
+          text: !lambda |-
+              if (x == "sunny") return std::string(u8"\U000F0599");
+              if (x == "clear-night") return std::string(u8"\U000F0594");
+              if (x == "partlycloudy") return std::string(u8"\U000F0595");
+              if (x == "cloudy") return std::string(u8"\U000F0590");
+              if (x == "rainy") return std::string(u8"\U000F0597");
+              if (x == "pouring") return std::string(u8"\U000F0596");
+              if (x == "snowy") return std::string(u8"\U000F0598");
+              if (x == "snowy-rainy") return std::string(u8"\U000F0598");
+              if (x == "fog") return std::string(u8"\U000F0591");
+              if (x == "lightning") return std::string(u8"\U000F0593");
+              if (x == "lightning-rainy") return std::string(u8"\U000F067E");
+              if (x == "windy") return std::string(u8"\U000F059D");
+              if (x == "hail") return std::string(u8"\U000F0592");
+              return std::string(u8"\U000F0595");
 
   - platform: homeassistant
     id: fc3_cond_sensor
@@ -444,6 +478,23 @@ text_sensor:
             if (x == "lightning-rainy") return std::string("Gewitterregen");
             if (x == "windy")           return std::string("Windig");
             return x;
+      - lvgl.label.update:
+          id: lbl_fc3_icon
+          text: !lambda |-
+              if (x == "sunny") return std::string(u8"\U000F0599");
+              if (x == "clear-night") return std::string(u8"\U000F0594");
+              if (x == "partlycloudy") return std::string(u8"\U000F0595");
+              if (x == "cloudy") return std::string(u8"\U000F0590");
+              if (x == "rainy") return std::string(u8"\U000F0597");
+              if (x == "pouring") return std::string(u8"\U000F0596");
+              if (x == "snowy") return std::string(u8"\U000F0598");
+              if (x == "snowy-rainy") return std::string(u8"\U000F0598");
+              if (x == "fog") return std::string(u8"\U000F0591");
+              if (x == "lightning") return std::string(u8"\U000F0593");
+              if (x == "lightning-rainy") return std::string(u8"\U000F067E");
+              if (x == "windy") return std::string(u8"\U000F059D");
+              if (x == "hail") return std::string(u8"\U000F0592");
+              return std::string(u8"\U000F0595");
 
   # Wettervorhersage Tagnamen (Mo, Di, Mi ...)
   - platform: homeassistant
@@ -642,12 +693,18 @@ font:
     extras:
       - file: "gfonts://Roboto"
         glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
-  # Font Awesome 5 fuer Input-Symbol (sign-in-alt = Pfeil in Rahmen)
+  # MDI Icons (22px): Import, Thermometer, Blitz, Solarpanel, Haus-Blitz
   - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
     id: fa5_icons
     size: 22
     bpp: 4
-    glyphs: "󰋺"  # mdi:import (U+F01A6)
+    glyphs: "󰋺󰔏󱐋󰶛󱤃"
+  # MDI Icons (34px): Wetter-Icons fuer Vorhersagekarten
+  - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
+    id: mdi_weather
+    size: 34
+    bpp: 4
+    glyphs: "󰖙󰖔󰖕󰖐󰖗󰖖󰖘󰖑󰖓󰙾󰖝󰖒"
 
 display:
   - platform: rpi_dpi_rgb
@@ -1217,6 +1274,12 @@ lvgl:
         - label:
             x: 30
             y: 25
+            text: "󰔏"
+            text_font: fa5_icons
+            text_color: 0x7B5EA7
+        - label:
+            x: 58
+            y: 25
             text: "Außen"
             text_font: roboto_24
             text_color: 0x7B5EA7
@@ -1302,6 +1365,12 @@ lvgl:
         # Haus-Verbrauch
         - label:
             x: 540
+            y: 70
+            text: "󱤃"
+            text_font: fa5_icons
+            text_color: 0x9090AA
+        - label:
+            x: 568
             y: 72
             text: "Haus"
             text_font: roboto_18
@@ -1320,6 +1389,12 @@ lvgl:
         # Solar-Leistung
         - label:
             x: 540
+            y: 166
+            text: "󰶛"
+            text_font: fa5_icons
+            text_color: 0x9090AA
+        - label:
+            x: 568
             y: 168
             text: "Solar"
             text_font: roboto_18
@@ -1369,18 +1444,27 @@ lvgl:
               - label:
                   id: lbl_fc1_day
                   x: 10
-                  y: 12
+                  y: 10
                   width: 300
                   text: "Morgen"
                   text_font: roboto_18
                   text_color: 0x7B5EA7
                   text_align: center
               - label:
+                  id: lbl_fc1_icon
+                  x: 10
+                  y: 32
+                  width: 300
+                  text: ""
+                  text_font: mdi_weather
+                  text_color: 0x555577
+                  text_align: center
+              - label:
                   id: lbl_fc1_cond
                   x: 10
-                  y: 42
+                  y: 75
                   width: 300
-                  height: 32
+                  height: 30
                   text: "--"
                   text_font: roboto_18
                   text_color: 0x444466
@@ -1389,7 +1473,7 @@ lvgl:
               - label:
                   id: lbl_fc1_temp
                   x: 10
-                  y: 82
+                  y: 112
                   width: 300
                   text: "--°C"
                   text_font: roboto_36
@@ -1411,18 +1495,27 @@ lvgl:
               - label:
                   id: lbl_fc2_day
                   x: 10
-                  y: 12
+                  y: 10
                   width: 300
                   text: "Übermorgen"
                   text_font: roboto_18
                   text_color: 0x7B5EA7
                   text_align: center
               - label:
+                  id: lbl_fc2_icon
+                  x: 10
+                  y: 32
+                  width: 300
+                  text: ""
+                  text_font: mdi_weather
+                  text_color: 0x555577
+                  text_align: center
+              - label:
                   id: lbl_fc2_cond
                   x: 10
-                  y: 42
+                  y: 75
                   width: 300
-                  height: 32
+                  height: 30
                   text: "--"
                   text_font: roboto_18
                   text_color: 0x444466
@@ -1431,7 +1524,7 @@ lvgl:
               - label:
                   id: lbl_fc2_temp
                   x: 10
-                  y: 82
+                  y: 112
                   width: 300
                   text: "--°C"
                   text_font: roboto_36
@@ -1453,18 +1546,27 @@ lvgl:
               - label:
                   id: lbl_fc3_day
                   x: 10
-                  y: 12
+                  y: 10
                   width: 300
                   text: "In 3 Tagen"
                   text_font: roboto_18
                   text_color: 0x7B5EA7
                   text_align: center
               - label:
+                  id: lbl_fc3_icon
+                  x: 10
+                  y: 32
+                  width: 300
+                  text: ""
+                  text_font: mdi_weather
+                  text_color: 0x555577
+                  text_align: center
+              - label:
                   id: lbl_fc3_cond
                   x: 10
-                  y: 42
+                  y: 75
                   width: 300
-                  height: 32
+                  height: 30
                   text: "--"
                   text_font: roboto_18
                   text_color: 0x444466
@@ -1473,7 +1575,7 @@ lvgl:
               - label:
                   id: lbl_fc3_temp
                   x: 10
-                  y: 82
+                  y: 112
                   width: 300
                   text: "--°C"
                   text_font: roboto_36
