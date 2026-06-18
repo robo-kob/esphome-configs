@@ -1,0 +1,1076 @@
+# ══════════════════════════════════════════════════════════════════════════
+# Waveshare ESP32-S3-Touch-LCD-7  (NON-B Variante, 800x480, CH422G IO-Expander)
+# Dashboard: Aussentemperatur, UV-Index, Solar, Hausverbrauch, Wettervorschau
+#
+# Hardware kommt komplett aus der Community-Package:
+#   github.com/inytar/waveshare-esp32-s3-touch-lcd-7-esphome
+#   -> stellt bereit: esp32/psram, i2c, ch422g, display (mipi_rgb),
+#      touchscreen (gt911), light.lcdbacklight (NUR an/aus, kein PWM),
+#      switch.antiburn (laeuft automatisch wenn Backlight aus)
+#
+# Backlight-Logik (hier definiert):
+#   - AN  wenn jemand zuhause ist
+#   - AUS wenn niemand zuhause
+#   - AUS im naechtlichen Antiburn-Fenster 03:00-03:30 (Antiburn laeuft dann auto)
+# ══════════════════════════════════════════════════════════════════════════
+
+substitutions:
+  # ── HA-Entities (bitte in Home Assistant verifizieren) ───────────────────
+  ent_outdoor_temp: sensor.gw1100a_outdoor_temperature
+  ent_uv_index:     sensor.gw1100a_uv_index
+  ent_solar_power:  sensor.solarbank_2_e1600_pro_solarleistung
+  ent_house_power:  sensor.poweropti_35fd8_lokal_leistung
+  ent_weather:      weather.forecast_home
+  # Praesenz: Backlight an, sobald EINE dieser Personen zuhause ist
+  ent_person_1:     person.roland
+  ent_person_2:     person.momo
+  # Raum-Praesenz (Wohnzimmer): leer >10min -> Display aus
+  ent_room_presence: binary_sensor.prasenz_wohnzimmer_presence
+  # Briefkasten-Status (HA input_boolean Helper, von Automation gesetzt)
+  ent_mailbox:      input_boolean.post_im_briefkasten
+  # Abend-Dark-Mode (kein echtes Dimmen — halbtransparente schwarze Ebene)
+  dim_start_hour:   "21"     # ab dieser Stunde abdunkeln
+  dim_end_hour:     "7"      # ab dieser Stunde wieder hell
+  dim_opacity:      "60%"    # Staerke der Abdunklung (0%=aus ... 100%=schwarz)
+
+packages:
+  waveshare:
+    url: https://github.com/inytar/waveshare-esp32-s3-touch-lcd-7-esphome
+    files: [ waveshare-esp32-s3-touch-lcd-7.yaml ]
+    # refresh: 1min   # Default ist 1d. Nur zum Debuggen verkuerzen.
+
+esphome:
+  name: waveshare-lcd7-dashboard
+  friendly_name: Waveshare 7 Dashboard 800x480
+  on_boot:
+    - priority: -100
+      then:
+        - lvgl.label.update:
+            id: lbl_mailbox_icon
+            text: !lambda 'return std::string("\U000F06EE");'  # mdi:mailbox
+        - script.execute: update_backlight
+        - script.execute: update_dim
+
+# PSRAM: Die Package stellt 120MHz octal (experimentell) ein — auf diesem
+# ESP32-S3 rev0.2 fuehrt das zu Boot-Crash + OTA-Rollback. Auf stabile
+# 80MHz zwingen (ueberschreibt den Package-Wert).
+psram:
+  mode: octal
+  speed: 80MHz
+
+logger:
+
+api:
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: none
+  # Erst-Upload nach Umbenennung: direkt an die aktuelle IP (mDNS kennt den
+  # neuen Namen noch nicht). Kann nach dem ersten erfolgreichen Flash bleiben.
+  use_address: 192.168.1.105
+  ap:
+    ssid: "Waveshare 7 Fallback"
+    password: "12345678"
+
+captive_portal:
+
+# ── Zeit (fuer naechtliches Antiburn-Fenster) ──────────────────────────────
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+    on_time_sync:
+      # Sobald Zeit von HA da ist: Zustand korrekt setzen
+      - script.execute: update_backlight
+      - script.execute: update_dim
+    on_time:
+      # 03:00 Antiburn-Fenster beginnt -> Backlight aus (Antiburn laeuft auto)
+      - seconds: 0
+        minutes: 0
+        hours: 3
+        then:
+          - script.execute: update_backlight
+      # 03:30 Fenster vorbei -> ggf. wieder an (falls jemand zuhause)
+      - seconds: 0
+        minutes: 30
+        hours: 3
+        then:
+          - script.execute: update_backlight
+      # Abend-Dark-Mode an
+      - seconds: 0
+        minutes: 0
+        hours: ${dim_start_hour}
+        then:
+          - script.execute: update_dim
+      # Abend-Dark-Mode aus
+      - seconds: 0
+        minutes: 0
+        hours: ${dim_end_hour}
+        then:
+          - script.execute: update_dim
+
+globals:
+  - id: roland_home
+    type: bool
+    restore_value: no
+    initial_value: 'true'   # bis HA meldet: Screen an
+  - id: momo_home
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: lr_present
+    type: bool
+    restore_value: no
+    initial_value: 'true'   # Wohnzimmer als "belegt" annehmen bis HA meldet
+
+# ── Raum-Praesenz Wohnzimmer (10-Min-Nachlauf) ─────────────────────────────
+binary_sensor:
+  - platform: homeassistant
+    id: lr_presence
+    entity_id: ${ent_room_presence}
+    internal: true
+    on_state:
+      - if:
+          condition:
+            lambda: 'return x;'
+          then:
+            # jemand im Wohnzimmer -> Timer stoppen, sofort an
+            - script.stop: lr_empty_timer
+            - lambda: 'id(lr_present) = true;'
+            - script.execute: update_backlight
+          else:
+            # Wohnzimmer leer -> 10-Min-Countdown starten
+            - script.execute: lr_empty_timer
+
+  # ── Briefkasten: Post-Status (input_boolean) -> Kachel rot/gruen ──────────
+  - platform: homeassistant
+    id: mailbox_post
+    entity_id: ${ent_mailbox}
+    internal: true
+    on_state:
+      - if:
+          condition:
+            lambda: 'return x;'
+          then:
+            # Post da -> rote Kachel, weisses Icon, "Post!"
+            - lvgl.widget.update:
+                id: tile_mailbox
+                bg_color: 0xE24B4A
+            - lvgl.label.update: { id: lbl_mailbox_cap, text_color: 0xFCEBEB }
+            - lvgl.label.update: { id: lbl_mailbox_icon, text_color: 0xFFFFFF }
+            - lvgl.label.update: { id: lbl_mailbox_txt, text: "Post!", text_color: 0xFFFFFF }
+          else:
+            # leer -> gruene Kachel, gruenes Icon, "leer"
+            - lvgl.widget.update:
+                id: tile_mailbox
+                bg_color: 0xE7F0E7
+            - lvgl.label.update: { id: lbl_mailbox_cap, text_color: 0x88A088 }
+            - lvgl.label.update: { id: lbl_mailbox_icon, text_color: 0x6BA368 }
+            - lvgl.label.update: { id: lbl_mailbox_txt, text: "leer", text_color: 0x6B8E6B }
+
+# ── Backlight-Entscheidung ─────────────────────────────────────────────────
+script:
+  - id: lr_empty_timer
+    mode: restart
+    then:
+      - delay: 10min
+      - lambda: 'id(lr_present) = false;'
+      - script.execute: update_backlight
+
+  # Abend-Dark-Mode: Overlay je nach Uhrzeit ein/aus
+  - id: update_dim
+    then:
+      - if:
+          condition:
+            lambda: |-
+              auto t = id(homeassistant_time).now();
+              if (!t.is_valid()) return false;
+              int h = t.hour;
+              int s = ${dim_start_hour};
+              int e = ${dim_end_hour};
+              // Fenster ueber Mitternacht (z.B. 21 -> 7)
+              if (s > e) return (h >= s || h < e);
+              return (h >= s && h < e);
+          then:
+            - lvgl.widget.update: { id: dim_overlay, hidden: false }
+          else:
+            - lvgl.widget.update: { id: dim_overlay, hidden: true }
+
+  - id: update_backlight
+    then:
+      - if:
+          condition:
+            lambda: |-
+              // Naechtliches Antiburn-Fenster 03:00-03:30 -> aus
+              auto t = id(homeassistant_time).now();
+              if (t.is_valid()) {
+                int mins = t.hour * 60 + t.minute;
+                if (mins >= 180 && mins < 210) return false;
+              }
+              // an wenn jemand zuhause UND Wohnzimmer in den letzten 10min belegt war
+              return (id(roland_home) || id(momo_home)) && id(lr_present);
+          then:
+            - light.turn_on: lcdbacklight
+          else:
+            - light.turn_off: lcdbacklight
+
+# ══════════════════════════════════════════════════════════════════════════
+# Fonts
+# ══════════════════════════════════════════════════════════════════════════
+font:
+  - file: "gfonts://Roboto"
+    id: roboto_18
+    size: 18
+    bpp: 4
+    extras:
+      - file: "gfonts://Roboto"
+        glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
+  - file: "gfonts://Roboto"
+    id: roboto_22
+    size: 22
+    bpp: 4
+    extras:
+      - file: "gfonts://Roboto"
+        glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
+  - file: "gfonts://Roboto"
+    id: roboto_24
+    size: 24
+    bpp: 4
+    extras:
+      - file: "gfonts://Roboto"
+        glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
+  - file: "gfonts://Roboto"
+    id: roboto_28
+    size: 28
+    bpp: 4
+    extras:
+      - file: "gfonts://Roboto"
+        glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
+  - file: "gfonts://Roboto"
+    id: roboto_40
+    size: 40
+    bpp: 4
+    extras:
+      - file: "gfonts://Roboto"
+        glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
+  - file: "gfonts://Roboto"
+    id: roboto_56
+    size: 56
+    bpp: 4
+    extras:
+      - file: "gfonts://Roboto"
+        glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
+  - file: "gfonts://Roboto"
+    id: roboto_64
+    size: 64
+    bpp: 4
+    extras:
+      - file: "gfonts://Roboto"
+        glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
+  # MDI Icons (22px): Thermometer, Blitz, Solarpanel, Haus, Sonne(UV)
+  - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
+    id: mdi_22
+    size: 22
+    bpp: 4
+    glyphs: "󰔏󱐋󰶛󱤃󰖙"
+  # MDI Briefkasten (44px) fuer Briefkasten-Kachel
+  - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
+    id: mdi_mailbox_44
+    size: 44
+    bpp: 4
+    glyphs: "󰛮"
+  # MDI Wetter-Icons (46px) fuer Vorhersagekarten (+15%)
+  - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
+    id: mdi_weather_46
+    size: 46
+    bpp: 4
+    glyphs: "󰖙󰖔󰖕󰖐󰖗󰖖󰖘󰖑󰖓󰙾󰖝󰖒"
+  # MDI Wetter-Icons (64px) fuer "Wetter heute"
+  - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
+    id: mdi_weather_64
+    size: 64
+    bpp: 4
+    glyphs: "󰖙󰖔󰖕󰖐󰖗󰖖󰖘󰖑󰖓󰙾󰖝󰖒"
+
+# ══════════════════════════════════════════════════════════════════════════
+# Sensoren (Home Assistant -> LVGL Labels)
+# ══════════════════════════════════════════════════════════════════════════
+sensor:
+  - platform: homeassistant
+    id: outdoor_temp_sensor
+    entity_id: ${ent_outdoor_temp}
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_temp
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.1f°C", x);
+            return std::string(buf);
+
+  - platform: homeassistant
+    id: outdoor_humidity_sensor
+    entity_id: sensor.gw1100a_humidity
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_humidity
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.0f%%", x);
+            return std::string(buf);
+
+  - platform: homeassistant
+    id: rain_24h_sensor
+    entity_id: sensor.gw1100a_24h_rain
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_rain
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.1f mm", x);
+            return std::string(buf);
+
+  # UV-Index: nur sichtbar bei Wert > 3, Farbe nach Stufe
+  - platform: homeassistant
+    id: uv_index_sensor
+    entity_id: ${ent_uv_index}
+    internal: true
+    on_value:
+      - if:
+          condition:
+            lambda: return x > 3;
+          then:
+            - lvgl.widget.update:
+                id: lbl_uv
+                hidden: false
+            - lvgl.label.update:
+                id: lbl_uv
+                text: !lambda |-
+                  char buf[20];
+                  snprintf(buf, sizeof(buf), "UV-Index %.0f", x);
+                  return std::string(buf);
+            - lvgl.label.update:
+                id: lbl_uv
+                text_color: !lambda |-
+                  if (x >= 8) return lv_color_hex(0xCC2222); // sehr hoch
+                  if (x >= 6) return lv_color_hex(0xE06600); // hoch
+                  return lv_color_hex(0xE0A000);             // mittel (3-5)
+          else:
+            - lvgl.widget.update:
+                id: lbl_uv
+                hidden: true
+
+  - platform: homeassistant
+    id: solar_power_sensor
+    entity_id: ${ent_solar_power}
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_solar
+          text: !lambda |-
+            char buf[16];
+            if (x >= 1000.0f) snprintf(buf, sizeof(buf), "%.1f kW", x/1000.0f);
+            else snprintf(buf, sizeof(buf), "%.0f W", x);
+            return std::string(buf);
+
+  - platform: homeassistant
+    id: house_power_sensor
+    entity_id: ${ent_house_power}
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_house
+          text: !lambda |-
+            char buf[16];
+            if (x >= 1000.0f) snprintf(buf, sizeof(buf), "%.1f kW", x/1000.0f);
+            else snprintf(buf, sizeof(buf), "%.0f W", x);
+            return std::string(buf);
+
+  # Heute Tageshoechst/-tief
+  - platform: homeassistant
+    id: today_temp_max_sensor
+    entity_id: sensor.forecast_tag_0_temp
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_today_max
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.0f°C", x);
+            return std::string(buf);
+  - platform: homeassistant
+    id: today_temp_min_sensor
+    entity_id: sensor.forecast_tag_0_temp_min
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_today_min
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.0f°C", x);
+            return std::string(buf);
+
+  # Vorhersage Tag 1-3: Max-Temp
+  - platform: homeassistant
+    id: fc1_temp_sensor
+    entity_id: sensor.forecast_tag_1_temp
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_fc1_max
+          text: !lambda |-
+            char buf[16]; snprintf(buf, sizeof(buf), "%.0f°", x); return std::string(buf);
+  - platform: homeassistant
+    id: fc2_temp_sensor
+    entity_id: sensor.forecast_tag_2_temp
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_fc2_max
+          text: !lambda |-
+            char buf[16]; snprintf(buf, sizeof(buf), "%.0f°", x); return std::string(buf);
+  - platform: homeassistant
+    id: fc3_temp_sensor
+    entity_id: sensor.forecast_tag_3_temp
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_fc3_max
+          text: !lambda |-
+            char buf[16]; snprintf(buf, sizeof(buf), "%.0f°", x); return std::string(buf);
+
+  # Vorhersage Tag 1-3: Min-Temp
+  - platform: homeassistant
+    id: fc1_temp_min_sensor
+    entity_id: sensor.forecast_tag_1_temp_min
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_fc1_min
+          text: !lambda |-
+            char buf[16]; snprintf(buf, sizeof(buf), "%.0f°", x); return std::string(buf);
+  - platform: homeassistant
+    id: fc2_temp_min_sensor
+    entity_id: sensor.forecast_tag_2_temp_min
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_fc2_min
+          text: !lambda |-
+            char buf[16]; snprintf(buf, sizeof(buf), "%.0f°", x); return std::string(buf);
+  - platform: homeassistant
+    id: fc3_temp_min_sensor
+    entity_id: sensor.forecast_tag_3_temp_min
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_fc3_min
+          text: !lambda |-
+            char buf[16]; snprintf(buf, sizeof(buf), "%.0f°", x); return std::string(buf);
+
+text_sensor:
+  # ── Praesenz: person.* Status ("home" = zuhause) ─────────────────────────
+  - platform: homeassistant
+    id: person_roland
+    entity_id: ${ent_person_1}
+    internal: true
+    on_value:
+      - lambda: 'id(roland_home) = (x == "home");'
+      - script.execute: update_backlight
+  - platform: homeassistant
+    id: person_momo
+    entity_id: ${ent_person_2}
+    internal: true
+    on_value:
+      - lambda: 'id(momo_home) = (x == "home");'
+      - script.execute: update_backlight
+
+  # Aktuelles Wetter -> Bedingung + Icon
+  - platform: homeassistant
+    id: weather_state_sensor
+    entity_id: ${ent_weather}
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_cond
+          text: !lambda |-
+            if (x == "sunny")           return std::string("Sonnig");
+            if (x == "clear-night")     return std::string("Klare Nacht");
+            if (x == "partlycloudy")    return std::string("Teils bewölkt");
+            if (x == "cloudy")          return std::string("Bewölkt");
+            if (x == "rainy")           return std::string("Regen");
+            if (x == "pouring")         return std::string("Starkregen");
+            if (x == "snowy")           return std::string("Schnee");
+            if (x == "snowy-rainy")     return std::string("Schneeregen");
+            if (x == "fog")             return std::string("Nebel");
+            if (x == "lightning")       return std::string("Gewitter");
+            if (x == "lightning-rainy") return std::string("Gewitterregen");
+            if (x == "windy")           return std::string("Windig");
+            if (x == "hail")            return std::string("Hagel");
+            if (x == "exceptional")     return std::string("Außergewöhnlich");
+            return x;
+      - lvgl.label.update:
+          id: lbl_icon_now
+          text: !lambda |-
+            if (x == "sunny")           return std::string("\U000F0599");
+            if (x == "clear-night")     return std::string("\U000F0594");
+            if (x == "partlycloudy")    return std::string("\U000F0595");
+            if (x == "cloudy")          return std::string("\U000F0590");
+            if (x == "rainy")           return std::string("\U000F0597");
+            if (x == "pouring")         return std::string("\U000F0596");
+            if (x == "snowy")           return std::string("\U000F0598");
+            if (x == "snowy-rainy")     return std::string("\U000F0598");
+            if (x == "fog")             return std::string("\U000F0591");
+            if (x == "lightning")       return std::string("\U000F0593");
+            if (x == "lightning-rainy") return std::string("\U000F067E");
+            if (x == "windy")           return std::string("\U000F059D");
+            if (x == "hail")            return std::string("\U000F0592");
+            return std::string("\U000F0595");
+
+  # Vorhersage-Tagnamen
+  - platform: homeassistant
+    id: fc1_day_sensor
+    entity_id: sensor.forecast_tag_1_name
+    internal: true
+    on_value:
+      - lvgl.label.update: { id: lbl_fc1_day, text: !lambda "return x;" }
+  - platform: homeassistant
+    id: fc2_day_sensor
+    entity_id: sensor.forecast_tag_2_name
+    internal: true
+    on_value:
+      - lvgl.label.update: { id: lbl_fc2_day, text: !lambda "return x;" }
+  - platform: homeassistant
+    id: fc3_day_sensor
+    entity_id: sensor.forecast_tag_3_name
+    internal: true
+    on_value:
+      - lvgl.label.update: { id: lbl_fc3_day, text: !lambda "return x;" }
+
+  # Vorhersage-Icons (Zustand -> MDI)
+  - platform: homeassistant
+    id: fc1_cond_sensor
+    entity_id: sensor.forecast_tag_1_zustand
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_fc1_icon
+          text: !lambda |-
+            if (x == "sunny") return std::string("\U000F0599");
+            if (x == "clear-night") return std::string("\U000F0594");
+            if (x == "partlycloudy") return std::string("\U000F0595");
+            if (x == "cloudy") return std::string("\U000F0590");
+            if (x == "rainy") return std::string("\U000F0597");
+            if (x == "pouring") return std::string("\U000F0596");
+            if (x == "snowy") return std::string("\U000F0598");
+            if (x == "snowy-rainy") return std::string("\U000F0598");
+            if (x == "fog") return std::string("\U000F0591");
+            if (x == "lightning") return std::string("\U000F0593");
+            if (x == "lightning-rainy") return std::string("\U000F067E");
+            if (x == "windy") return std::string("\U000F059D");
+            if (x == "hail") return std::string("\U000F0592");
+            return std::string("\U000F0595");
+  - platform: homeassistant
+    id: fc2_cond_sensor
+    entity_id: sensor.forecast_tag_2_zustand
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_fc2_icon
+          text: !lambda |-
+            if (x == "sunny") return std::string("\U000F0599");
+            if (x == "clear-night") return std::string("\U000F0594");
+            if (x == "partlycloudy") return std::string("\U000F0595");
+            if (x == "cloudy") return std::string("\U000F0590");
+            if (x == "rainy") return std::string("\U000F0597");
+            if (x == "pouring") return std::string("\U000F0596");
+            if (x == "snowy") return std::string("\U000F0598");
+            if (x == "snowy-rainy") return std::string("\U000F0598");
+            if (x == "fog") return std::string("\U000F0591");
+            if (x == "lightning") return std::string("\U000F0593");
+            if (x == "lightning-rainy") return std::string("\U000F067E");
+            if (x == "windy") return std::string("\U000F059D");
+            if (x == "hail") return std::string("\U000F0592");
+            return std::string("\U000F0595");
+  - platform: homeassistant
+    id: fc3_cond_sensor
+    entity_id: sensor.forecast_tag_3_zustand
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_fc3_icon
+          text: !lambda |-
+            if (x == "sunny") return std::string("\U000F0599");
+            if (x == "clear-night") return std::string("\U000F0594");
+            if (x == "partlycloudy") return std::string("\U000F0595");
+            if (x == "cloudy") return std::string("\U000F0590");
+            if (x == "rainy") return std::string("\U000F0597");
+            if (x == "pouring") return std::string("\U000F0596");
+            if (x == "snowy") return std::string("\U000F0598");
+            if (x == "snowy-rainy") return std::string("\U000F0598");
+            if (x == "fog") return std::string("\U000F0591");
+            if (x == "lightning") return std::string("\U000F0593");
+            if (x == "lightning-rainy") return std::string("\U000F067E");
+            if (x == "windy") return std::string("\U000F059D");
+            if (x == "hail") return std::string("\U000F0592");
+            return std::string("\U000F0595");
+
+# ══════════════════════════════════════════════════════════════════════════
+# LVGL: Dashboard-Seite (800x480) — erweitert das LVGL aus der Package
+# (Display/Touch sind bereits in der Package gebunden — hier NUR die Seite)
+# ══════════════════════════════════════════════════════════════════════════
+lvgl:
+  default_font: roboto_24
+  # Abend-Dark-Mode: halbtransparente Ebene ueber allem (Touch faellt durch)
+  top_layer:
+    widgets:
+      - obj:
+          id: dim_overlay
+          x: 0
+          y: 0
+          width: 800
+          height: 480
+          bg_color: 0x000000
+          bg_opa: ${dim_opacity}
+          border_width: 0
+          radius: 0
+          pad_all: 0
+          scrollbar_mode: "off"
+          clickable: false
+          hidden: true
+  pages:
+    - id: dashboard
+      bg_color: 0xEEEBF8
+      bg_opa: cover
+      widgets:
+
+        # ───────────────────────── HERO: Aussen + Wetter heute ─────────────
+        - obj:
+            x: 10
+            y: 10
+            width: 480
+            height: 220
+            bg_color: 0xFCFBFF
+            border_color: 0xCCCADE
+            border_width: 1
+            radius: 14
+            pad_all: 0
+            scrollbar_mode: "off"
+            widgets:
+              - label:
+                  x: 18
+                  y: 12
+                  text: "󰔏"
+                  text_font: mdi_22
+                  text_color: 0x7B5EA7
+              - label:
+                  x: 46
+                  y: 12
+                  text: "Außen"
+                  text_font: roboto_18
+                  text_color: 0x7B5EA7
+              # Grosse Temperatur
+              - label:
+                  id: lbl_temp
+                  x: 18
+                  y: 42
+                  width: 300
+                  text: "--°C"
+                  text_font: roboto_64
+                  text_color: 0x1A1840
+                  text_align: left
+              # Wetter-Icon heute (rechts oben)
+              - label:
+                  id: lbl_icon_now
+                  x: 330
+                  y: 34
+                  width: 130
+                  text: ""
+                  text_font: mdi_weather_64
+                  text_color: 0x555577
+                  text_align: center
+              # Bedingung
+              - label:
+                  id: lbl_cond
+                  x: 18
+                  y: 130
+                  width: 444
+                  height: 36
+                  text: "--"
+                  text_font: roboto_28
+                  text_color: 0x444466
+                  text_align: left
+                  long_mode: dot
+              # Heute min/max
+              - label:
+                  x: 18
+                  y: 176
+                  text: "Heute"
+                  text_font: roboto_18
+                  text_color: 0x9090AA
+              - label:
+                  id: lbl_today_min
+                  x: 90
+                  y: 173
+                  width: 70
+                  text: "--°C"
+                  text_font: roboto_24
+                  text_color: 0x2266CC
+                  text_align: right
+              - label:
+                  x: 162
+                  y: 173
+                  text: "bis"
+                  text_font: roboto_24
+                  text_color: 0x9090AA
+              - label:
+                  id: lbl_today_max
+                  x: 210
+                  y: 173
+                  width: 80
+                  text: "--°C"
+                  text_font: roboto_24
+                  text_color: 0xCC4422
+                  text_align: left
+
+        # ──────────────── Wetterdetails: Feuchtigkeit + Regen + UV ─────────
+        # UV-Index ohne eigenen Rahmen, nur sichtbar wenn Wert > 3
+        - obj:
+            x: 500
+            y: 10
+            width: 290
+            height: 220
+            bg_color: 0xFCFBFF
+            border_color: 0xCCCADE
+            border_width: 1
+            radius: 14
+            pad_all: 0
+            scrollbar_mode: "off"
+            widgets:
+              - label:
+                  x: 18
+                  y: 14
+                  text: "Feuchtigkeit"
+                  text_font: roboto_18
+                  text_color: 0x9090AA
+              - label:
+                  id: lbl_humidity
+                  x: 18
+                  y: 36
+                  width: 254
+                  text: "--%"
+                  text_font: roboto_28
+                  text_color: 0x1A1840
+              - label:
+                  x: 18
+                  y: 82
+                  text: "Regen (24h)"
+                  text_font: roboto_18
+                  text_color: 0x9090AA
+              - label:
+                  id: lbl_rain
+                  x: 18
+                  y: 104
+                  width: 254
+                  text: "-- mm"
+                  text_font: roboto_28
+                  text_color: 0x1A1840
+              # UV-Index — rahmenlos, hidden bis Wert > 3
+              - label:
+                  id: lbl_uv
+                  x: 18
+                  y: 166
+                  width: 254
+                  text: "UV-Index --"
+                  text_font: roboto_28
+                  text_color: 0xE0A000
+                  hidden: true
+
+        # ───────────────────────── Solar-Leistung ─────────────────────────
+        - obj:
+            x: 10
+            y: 240
+            width: 253
+            height: 110
+            bg_color: 0xFCFBFF
+            border_color: 0xCCCADE
+            border_width: 1
+            radius: 14
+            pad_all: 0
+            scrollbar_mode: "off"
+            widgets:
+              - label:
+                  x: 18
+                  y: 12
+                  text: "󰶛"
+                  text_font: mdi_22
+                  text_color: 0x9090AA
+              - label:
+                  x: 46
+                  y: 12
+                  text: "Solar"
+                  text_font: roboto_18
+                  text_color: 0x9090AA
+              - label:
+                  id: lbl_solar
+                  x: 18
+                  y: 48
+                  width: 217
+                  text: "-- W"
+                  text_font: roboto_40
+                  text_color: 0x228822
+                  text_align: center
+
+        # ───────────────────────── Hausverbrauch ──────────────────────────
+        - obj:
+            x: 273
+            y: 240
+            width: 253
+            height: 110
+            bg_color: 0xFCFBFF
+            border_color: 0xCCCADE
+            border_width: 1
+            radius: 14
+            pad_all: 0
+            scrollbar_mode: "off"
+            widgets:
+              - label:
+                  x: 18
+                  y: 12
+                  text: "󱤃"
+                  text_font: mdi_22
+                  text_color: 0x9090AA
+              - label:
+                  x: 46
+                  y: 12
+                  text: "Haus"
+                  text_font: roboto_18
+                  text_color: 0x9090AA
+              - label:
+                  id: lbl_house
+                  x: 18
+                  y: 48
+                  width: 217
+                  text: "-- W"
+                  text_font: roboto_40
+                  text_color: 0xCC2222
+                  text_align: center
+
+        # ──────────── Briefkasten — tappen quittiert (input_boolean off) ───
+        - button:
+            id: tile_mailbox
+            x: 536
+            y: 240
+            width: 254
+            height: 110
+            bg_color: 0xE7F0E7
+            bg_opa: cover
+            border_color: 0xCCCADE
+            border_width: 1
+            radius: 14
+            pad_all: 0
+            scrollbar_mode: "off"
+            on_click:
+              then:
+                - homeassistant.action:
+                    action: input_boolean.turn_off
+                    data:
+                      entity_id: ${ent_mailbox}
+            widgets:
+              - label:
+                  id: lbl_mailbox_cap
+                  x: 18
+                  y: 12
+                  text: "Briefkasten"
+                  text_font: roboto_18
+                  text_color: 0x88A088
+              - label:
+                  id: lbl_mailbox_icon
+                  x: 18
+                  y: 48
+                  text: ""
+                  text_font: mdi_mailbox_44
+                  text_color: 0x6BA368
+              - label:
+                  id: lbl_mailbox_txt
+                  x: 80
+                  y: 56
+                  width: 156
+                  text: "leer"
+                  text_font: roboto_28
+                  text_color: 0x6B8E6B
+                  text_align: left
+
+        # ───────────────────────── 3-Tage-Vorhersage ──────────────────────
+        # Tag 1
+        - obj:
+            x: 10
+            y: 360
+            width: 253
+            height: 110
+            bg_color: 0xFCFBFF
+            border_color: 0xCCCADE
+            border_width: 1
+            radius: 12
+            pad_all: 0
+            scrollbar_mode: "off"
+            widgets:
+              - label:
+                  id: lbl_fc1_day
+                  x: 0
+                  y: 6
+                  width: 253
+                  text: "Morgen"
+                  text_font: roboto_22
+                  text_color: 0x7B5EA7
+                  text_align: center
+              - label:
+                  id: lbl_fc1_icon
+                  x: 22
+                  y: 40
+                  width: 60
+                  text: ""
+                  text_font: mdi_weather_46
+                  text_color: 0x555577
+                  text_align: center
+              - label:
+                  id: lbl_fc1_min
+                  x: 96
+                  y: 52
+                  width: 60
+                  text: "--°"
+                  text_font: roboto_24
+                  text_color: 0x2266CC
+                  text_align: right
+              - label:
+                  x: 158
+                  y: 52
+                  text: "/"
+                  text_font: roboto_24
+                  text_color: 0x9090AA
+              - label:
+                  id: lbl_fc1_max
+                  x: 176
+                  y: 52
+                  width: 60
+                  text: "--°"
+                  text_font: roboto_24
+                  text_color: 0xCC4422
+                  text_align: left
+
+        # Tag 2
+        - obj:
+            x: 273
+            y: 360
+            width: 253
+            height: 110
+            bg_color: 0xFCFBFF
+            border_color: 0xCCCADE
+            border_width: 1
+            radius: 12
+            pad_all: 0
+            scrollbar_mode: "off"
+            widgets:
+              - label:
+                  id: lbl_fc2_day
+                  x: 0
+                  y: 6
+                  width: 253
+                  text: "Übermorgen"
+                  text_font: roboto_22
+                  text_color: 0x7B5EA7
+                  text_align: center
+              - label:
+                  id: lbl_fc2_icon
+                  x: 22
+                  y: 40
+                  width: 60
+                  text: ""
+                  text_font: mdi_weather_46
+                  text_color: 0x555577
+                  text_align: center
+              - label:
+                  id: lbl_fc2_min
+                  x: 96
+                  y: 52
+                  width: 60
+                  text: "--°"
+                  text_font: roboto_24
+                  text_color: 0x2266CC
+                  text_align: right
+              - label:
+                  x: 158
+                  y: 52
+                  text: "/"
+                  text_font: roboto_24
+                  text_color: 0x9090AA
+              - label:
+                  id: lbl_fc2_max
+                  x: 176
+                  y: 52
+                  width: 60
+                  text: "--°"
+                  text_font: roboto_24
+                  text_color: 0xCC4422
+                  text_align: left
+
+        # Tag 3
+        - obj:
+            x: 536
+            y: 360
+            width: 254
+            height: 110
+            bg_color: 0xFCFBFF
+            border_color: 0xCCCADE
+            border_width: 1
+            radius: 12
+            pad_all: 0
+            scrollbar_mode: "off"
+            widgets:
+              - label:
+                  id: lbl_fc3_day
+                  x: 0
+                  y: 6
+                  width: 254
+                  text: "In 3 Tagen"
+                  text_font: roboto_22
+                  text_color: 0x7B5EA7
+                  text_align: center
+              - label:
+                  id: lbl_fc3_icon
+                  x: 22
+                  y: 40
+                  width: 60
+                  text: ""
+                  text_font: mdi_weather_46
+                  text_color: 0x555577
+                  text_align: center
+              - label:
+                  id: lbl_fc3_min
+                  x: 96
+                  y: 52
+                  width: 60
+                  text: "--°"
+                  text_font: roboto_24
+                  text_color: 0x2266CC
+                  text_align: right
+              - label:
+                  x: 158
+                  y: 52
+                  text: "/"
+                  text_font: roboto_24
+                  text_color: 0x9090AA
+              - label:
+                  id: lbl_fc3_max
+                  x: 176
+                  y: 52
+                  width: 60
+                  text: "--°"
+                  text_font: roboto_24
+                  text_color: 0xCC4422
+                  text_align: left
