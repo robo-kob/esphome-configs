@@ -8,6 +8,7 @@ esphome:
   on_boot:
     - priority: -100
       then:
+        - lvgl.page.show: page_offline
         - lvgl.label.update:
             id: lbl_play_pause
             text: !lambda return std::string(LV_SYMBOL_PLAY);
@@ -220,10 +221,8 @@ sensor:
                 id: lbl_uv
                 text: !lambda |-
                   char buf[16];
-                  snprintf(buf, sizeof(buf), "UV-Index: %.0f", x);
-                  if (x >= 8) return std::string(buf) + " (sehr hoch)";
-                  if (x >= 6) return std::string(buf) + " (hoch)";
-                  return std::string(buf) + " (mittel)";
+                  snprintf(buf, sizeof(buf), "UV-Index %.0f", x);
+                  return std::string(buf);
           else:
             - lvgl.widget.update:
                 id: lbl_uv
@@ -278,6 +277,69 @@ sensor:
             snprintf(buf, sizeof(buf), "%.0f°C", x);
             return std::string(buf);
 
+  # Wettervorhersage Min-Temperaturen
+  # HINWEIS: Diese Entity-IDs bitte in HA anlegen (analog zu forecast_tag_X_temp)
+  - platform: homeassistant
+    id: fc1_temp_min_sensor
+    entity_id: sensor.forecast_tag_1_temp_min
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_fc1_temp_min
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.0f°C", x);
+            return std::string(buf);
+
+  - platform: homeassistant
+    id: fc2_temp_min_sensor
+    entity_id: sensor.forecast_tag_2_temp_min
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_fc2_temp_min
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.0f°C", x);
+            return std::string(buf);
+
+  - platform: homeassistant
+    id: fc3_temp_min_sensor
+    entity_id: sensor.forecast_tag_3_temp_min
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_fc3_temp_min
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.0f°C", x);
+            return std::string(buf);
+
+  # Heute Tageshöchst/-tief
+  - platform: homeassistant
+    id: today_temp_max_sensor
+    entity_id: sensor.forecast_tag_0_temp
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_today_temp_max
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.0f°C", x);
+            return std::string(buf);
+
+  - platform: homeassistant
+    id: today_temp_min_sensor
+    entity_id: sensor.forecast_tag_0_temp_min
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_today_temp_min
+          text: !lambda |-
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.0f°C", x);
+            return std::string(buf);
+
   # ── Seite 2: Energie ────────────────────────────────────────────────
   - platform: homeassistant
     id: house_power_sensor
@@ -288,7 +350,7 @@ sensor:
           id: lbl_house_power
           text: !lambda |-
             char buf[16];
-            if (x >= 1000.0f) snprintf(buf, sizeof(buf), "%.2f kW", x/1000.0f);
+            if (x >= 1000.0f) snprintf(buf, sizeof(buf), "%.1f kW", x/1000.0f);
             else snprintf(buf, sizeof(buf), "%.0f W", x);
             return std::string(buf);
   - platform: homeassistant
@@ -300,7 +362,7 @@ sensor:
           id: lbl_solar_power
           text: !lambda |-
             char buf[16];
-            if (x >= 1000.0f) snprintf(buf, sizeof(buf), "%.2f kW", x/1000.0f);
+            if (x >= 1000.0f) snprintf(buf, sizeof(buf), "%.1f kW", x/1000.0f);
             else snprintf(buf, sizeof(buf), "%.0f W", x);
             return std::string(buf);
 text_sensor:
@@ -309,10 +371,17 @@ text_sensor:
     entity_id: media_player.streamer_lossles_mxn10
     internal: true
     on_value:
-      - lvgl.label.update:
-          id: lbl_play_pause
-          text: !lambda |-
-            return std::string(x == "playing" ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
+      - if:
+          condition:
+            lambda: return x == "unavailable" || x.empty();
+          then:
+            - lvgl.page.show: page_offline
+          else:
+            - lvgl.page.show: main_page
+            - lvgl.label.update:
+                id: lbl_play_pause
+                text: !lambda |-
+                  return std::string(x == "playing" ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
 
   - platform: homeassistant
     id: mxn10_title
@@ -380,6 +449,23 @@ text_sensor:
             if (x == "hail")            return std::string("Hagel");
             if (x == "exceptional")     return std::string("Außergewöhnlich");
             return x;
+      - lvgl.label.update:
+          id: lbl_weather_icon_now
+          text: !lambda |-
+            if (x == "sunny")           return std::string("\U000F0599");
+            if (x == "clear-night")     return std::string("\U000F0594");
+            if (x == "partlycloudy")    return std::string("\U000F0595");
+            if (x == "cloudy")          return std::string("\U000F0590");
+            if (x == "rainy")           return std::string("\U000F0597");
+            if (x == "pouring")         return std::string("\U000F0596");
+            if (x == "snowy")           return std::string("\U000F0598");
+            if (x == "snowy-rainy")     return std::string("\U000F0598");
+            if (x == "fog")             return std::string("\U000F0591");
+            if (x == "lightning")       return std::string("\U000F0593");
+            if (x == "lightning-rainy") return std::string("\U000F067E");
+            if (x == "windy")           return std::string("\U000F059D");
+            if (x == "hail")            return std::string("\U000F0592");
+            return std::string("\U000F0595");
 
   # Wettervorhersage Tag 1-3 (Zustand als Text)
   - platform: homeassistant
@@ -699,12 +785,40 @@ font:
     size: 22
     bpp: 4
     glyphs: "󰋺󰔏󱐋󰶛󱤃"
-  # MDI Icons (34px): Wetter-Icons fuer Vorhersagekarten
+  # MDI Icons (34px): Wetter-Symbol aktueller Zustand
   - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
     id: mdi_weather
     size: 34
     bpp: 4
     glyphs: "󰖙󰖔󰖕󰖐󰖗󰖖󰖘󰖑󰖓󰙾󰖝󰖒"
+  # MDI Icons (52px): Wetter-Icons fuer Vorhersagekarten
+  - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
+    id: mdi_weather_lg
+    size: 52
+    bpp: 4
+    glyphs: "󰖙󰖔󰖕󰖐󰖗󰖖󰖘󰖑󰖓󰙾󰖝󰖒"
+  # MDI Icons (80px): Extra-große Wetter-Icons für Vorhersagekarten
+  - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
+    id: mdi_weather_xl
+    size: 80
+    bpp: 4
+    glyphs: "󰖙󰖔󰖕󰖐󰖗󰖖󰖘󰖑󰖓󰙾󰖝󰖒"
+  # Roboto 48px für Außentemperatur
+  - file: "gfonts://Roboto"
+    id: roboto_48
+    size: 48
+    bpp: 4
+    extras:
+      - file: "gfonts://Roboto"
+        glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
+  # Roboto 56px für große Energie-Werte
+  - file: "gfonts://Roboto"
+    id: roboto_56
+    size: 56
+    bpp: 4
+    extras:
+      - file: "gfonts://Roboto"
+        glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
 
 display:
   - platform: rpi_dpi_rgb
@@ -832,11 +946,15 @@ lvgl:
     - waveshare_touch
   default_font: roboto_24
   on_idle:
-    timeout: 60s
-    then:
-      - light.turn_on:
-          id: display_backlight
-          brightness: 10%
+    - timeout: 60s
+      then:
+        - light.turn_on:
+            id: display_backlight
+            brightness: 10%
+    - timeout: 5min
+      then:
+        - light.turn_off:
+            id: display_backlight
   on_gesture:
     then:
       - if:
@@ -883,6 +1001,34 @@ lvgl:
                 bg_color: 0xCCCCCC
 
   pages:
+    # ══════════════════════════════════════════════════════════════════════
+    # Seite 0: Offline-Anzeige (Media Player nicht verfügbar)
+    # ══════════════════════════════════════════════════════════════════════
+    - id: page_offline
+      bg_color: 0xEEEBF8
+      bg_opa: cover
+      widgets:
+        - label:
+            text: !lambda return std::string(LV_SYMBOL_AUDIO);
+            text_font: montserrat_48
+            text_color: 0xCCCEE0
+            align: center
+            y: -60
+        - label:
+            text: "Streamer nicht verfügbar"
+            text_font: roboto_28
+            text_color: 0x9898B8
+            text_align: center
+            align: center
+            y: 20
+        - label:
+            text: "Bitte Gerät einschalten"
+            text_font: roboto_24
+            text_color: 0xBBBBCC
+            text_align: center
+            align: center
+            y: 62
+
     - id: main_page
       # Heller Hintergrund (leichtes Lavendel)
       bg_color: 0xEEEBF8
@@ -1284,136 +1430,178 @@ lvgl:
             text_font: roboto_24
             text_color: 0x7B5EA7
 
-        # Große Temperatur
+        # Große Temperatur links (roboto_48) — Feuchtigkeit + Regen rechts daneben
         - label:
             id: lbl_outdoor_temp
             x: 30
-            y: 65
-            width: 460
-            height: 55
+            y: 58
+            width: 270
+            height: 65
             text: "--°C"
-            text_font: roboto_36
+            text_font: roboto_48
             text_color: 0x1A1840
             text_align: left
 
-        # Feuchtigkeit
+        # Feuchtigkeit (rechts neben Temp, 30px höher als zuvor)
         - label:
-            x: 30
-            y: 132
+            x: 298
+            y: 41
             text: "Feuchtigkeit"
-            text_font: roboto_18
+            text_font: roboto_24
             text_color: 0x9090AA
         - label:
             id: lbl_humidity
-            x: 230
-            y: 132
-            width: 180
+            x: 298
+            y: 69
+            width: 200
             text: "--%"
-            text_font: roboto_18
+            text_font: roboto_24
             text_color: 0x1A1840
 
-        # Regen 24h
+        # Regen 24h (rechts neben Temp, 30px höher)
         - label:
-            x: 30
-            y: 165
+            x: 298
+            y: 101
             text: "Regen (24h)"
-            text_font: roboto_18
+            text_font: roboto_24
             text_color: 0x9090AA
         - label:
             id: lbl_rain
-            x: 230
-            y: 165
-            width: 180
+            x: 298
+            y: 129
+            width: 200
             text: "-- mm"
-            text_font: roboto_18
+            text_font: roboto_24
             text_color: 0x1A1840
 
-        # Wetterzustand
+        # UV-Index unter der Temperatur (nur wenn > 3), roboto_28
+        - label:
+            id: lbl_uv
+            x: 30
+            y: 126
+            width: 270
+            height: 38
+            text: "UV-Index --"
+            text_font: roboto_28
+            text_color: 0xFF8800
+            hidden: true
+
+        # Wetter heute — nochmal 12px tiefer
+        - label:
+            x: 30
+            y: 185
+            text: "Wetter heute"
+            text_font: roboto_18
+            text_color: 0x7B5EA7
+        - label:
+            id: lbl_weather_icon_now
+            x: 30
+            y: 205
+            text: ""
+            text_font: mdi_weather_lg
+            text_color: 0x555577
         - label:
             id: lbl_weather_condition
-            x: 30
-            y: 210
-            width: 460
+            x: 90
+            y: 217
+            width: 162
             height: 36
             text: "--"
             text_font: roboto_24
             text_color: 0x444466
             long_mode: dot
-
-        # UV-Index (versteckt wenn <= 3)
         - label:
-            id: lbl_uv
-            x: 30
-            y: 260
-            width: 460
-            height: 30
-            text: "UV --"
-            text_font: roboto_18
-            text_color: 0xFF8800
-            hidden: true
+            id: lbl_today_temp_min
+            x: 256
+            y: 217
+            width: 80
+            text: "--°C"
+            text_font: roboto_24
+            text_color: 0x2266CC
+            text_align: right
+        - label:
+            x: 338
+            y: 217
+            text: " bis "
+            text_font: roboto_24
+            text_color: 0x9090AA
+        - label:
+            id: lbl_today_temp_max
+            x: 388
+            y: 217
+            width: 100
+            text: "--°C"
+            text_font: roboto_24
+            text_color: 0xCC4422
 
         # ════════════ RECHTS: Energie ════════════
 
-        # Abschnittsüberschrift
+        # Abschnittsüberschrift mit Blitz
         - label:
             x: 540
+            y: 25
+            text: "󱐋"
+            text_font: fa5_icons
+            text_color: 0x7B5EA7
+        - label:
+            x: 568
             y: 25
             text: "Energie"
             text_font: roboto_24
             text_color: 0x7B5EA7
 
-        # Haus-Verbrauch
+        # Haus-Verbrauch — Icon + Label (roboto_24) über dem Wert (linke Hälfte)
         - label:
-            x: 540
-            y: 70
+            x: 614
+            y: 114
             text: "󱤃"
             text_font: fa5_icons
             text_color: 0x9090AA
         - label:
-            x: 568
-            y: 72
+            x: 640
+            y: 114
             text: "Haus"
-            text_font: roboto_18
+            text_font: roboto_24
             text_color: 0x9090AA
         - label:
             id: lbl_house_power
             x: 540
-            y: 96
-            width: 460
-            height: 55
+            y: 148
+            width: 230
+            height: 72
             text: "-- W"
-            text_font: roboto_36
+            text_font: roboto_56
             text_color: 0xCC2222
-            text_align: left
+            text_align: center
 
-        # Solar-Leistung
+        # Solar-Leistung — Icon + Label (roboto_24) über dem Wert (rechte Hälfte)
         - label:
-            x: 540
-            y: 166
+            x: 842
+            y: 114
             text: "󰶛"
             text_font: fa5_icons
             text_color: 0x9090AA
         - label:
-            x: 568
-            y: 168
+            x: 868
+            y: 114
             text: "Solar"
-            text_font: roboto_18
+            text_font: roboto_24
             text_color: 0x9090AA
         - label:
             id: lbl_solar_power
-            x: 540
-            y: 192
-            width: 460
-            height: 55
+            x: 774
+            y: 148
+            width: 228
+            height: 72
             text: "-- W"
-            text_font: roboto_36
+            text_font: roboto_56
             text_color: 0x228822
-            text_align: left
+            text_align: center
 
         # ══ Horizontaler Trenner vor Vorhersage ══════════════════════
         - obj:
             x: 0
-            y: 305
+            y: 293
             width: 1024
             height: 2
             bg_color: 0xCCCADE
@@ -1422,19 +1610,13 @@ lvgl:
             radius: 0
 
         # ══ 3-Tage Vorhersage ════════════════════════════════════════
-        - label:
-            x: 30
-            y: 315
-            text: "Vorhersage"
-            text_font: roboto_18
-            text_color: 0x7B5EA7
 
         # --- Tag 1 ---
         - obj:
             x: 12
-            y: 338
+            y: 296
             width: 320
-            height: 210
+            height: 268
             bg_color: 0xE8E4F4
             border_color: 0xCCCADE
             border_width: 1
@@ -1443,49 +1625,66 @@ lvgl:
             widgets:
               - label:
                   id: lbl_fc1_day
-                  x: 10
-                  y: 10
-                  width: 300
+                  x: 8
+                  y: 6
+                  width: 200
                   text: "Morgen"
-                  text_font: roboto_18
+                  text_font: roboto_24
                   text_color: 0x7B5EA7
-                  text_align: center
+                  text_align: left
               - label:
                   id: lbl_fc1_icon
                   x: 10
-                  y: 32
+                  y: 38
                   width: 300
                   text: ""
-                  text_font: mdi_weather
+                  text_font: mdi_weather_xl
                   text_color: 0x555577
                   text_align: center
               - label:
                   id: lbl_fc1_cond
                   x: 10
-                  y: 75
+                  y: 120
                   width: 300
-                  height: 30
+                  height: 32
                   text: "--"
-                  text_font: roboto_18
+                  text_font: roboto_24
                   text_color: 0x444466
                   text_align: center
                   long_mode: dot
               - label:
-                  id: lbl_fc1_temp
+                  id: lbl_fc1_temp_min
                   x: 10
-                  y: 112
-                  width: 300
+                  y: 158
+                  width: 120
                   text: "--°C"
-                  text_font: roboto_36
-                  text_color: 0x1A1840
+                  text_font: roboto_24
+                  text_color: 0x2266CC
+                  text_align: right
+              - label:
+                  x: 133
+                  y: 158
+                  width: 44
+                  text: " bis"
+                  text_font: roboto_24
+                  text_color: 0x9090AA
                   text_align: center
+              - label:
+                  id: lbl_fc1_temp
+                  x: 177
+                  y: 158
+                  width: 123
+                  text: "--°C"
+                  text_font: roboto_24
+                  text_color: 0xCC4422
+                  text_align: left
 
         # --- Tag 2 ---
         - obj:
             x: 352
-            y: 338
+            y: 296
             width: 320
-            height: 210
+            height: 268
             bg_color: 0xE8E4F4
             border_color: 0xCCCADE
             border_width: 1
@@ -1494,49 +1693,66 @@ lvgl:
             widgets:
               - label:
                   id: lbl_fc2_day
-                  x: 10
-                  y: 10
-                  width: 300
+                  x: 8
+                  y: 6
+                  width: 200
                   text: "Übermorgen"
-                  text_font: roboto_18
+                  text_font: roboto_24
                   text_color: 0x7B5EA7
-                  text_align: center
+                  text_align: left
               - label:
                   id: lbl_fc2_icon
                   x: 10
-                  y: 32
+                  y: 38
                   width: 300
                   text: ""
-                  text_font: mdi_weather
+                  text_font: mdi_weather_xl
                   text_color: 0x555577
                   text_align: center
               - label:
                   id: lbl_fc2_cond
                   x: 10
-                  y: 75
+                  y: 120
                   width: 300
-                  height: 30
+                  height: 32
                   text: "--"
-                  text_font: roboto_18
+                  text_font: roboto_24
                   text_color: 0x444466
                   text_align: center
                   long_mode: dot
               - label:
-                  id: lbl_fc2_temp
+                  id: lbl_fc2_temp_min
                   x: 10
-                  y: 112
-                  width: 300
+                  y: 158
+                  width: 120
                   text: "--°C"
-                  text_font: roboto_36
-                  text_color: 0x1A1840
+                  text_font: roboto_24
+                  text_color: 0x2266CC
+                  text_align: right
+              - label:
+                  x: 133
+                  y: 158
+                  width: 44
+                  text: " bis"
+                  text_font: roboto_24
+                  text_color: 0x9090AA
                   text_align: center
+              - label:
+                  id: lbl_fc2_temp
+                  x: 177
+                  y: 158
+                  width: 123
+                  text: "--°C"
+                  text_font: roboto_24
+                  text_color: 0xCC4422
+                  text_align: left
 
         # --- Tag 3 ---
         - obj:
             x: 692
-            y: 338
+            y: 296
             width: 320
-            height: 210
+            height: 268
             bg_color: 0xE8E4F4
             border_color: 0xCCCADE
             border_width: 1
@@ -1545,42 +1761,59 @@ lvgl:
             widgets:
               - label:
                   id: lbl_fc3_day
-                  x: 10
-                  y: 10
-                  width: 300
+                  x: 8
+                  y: 6
+                  width: 200
                   text: "In 3 Tagen"
-                  text_font: roboto_18
+                  text_font: roboto_24
                   text_color: 0x7B5EA7
-                  text_align: center
+                  text_align: left
               - label:
                   id: lbl_fc3_icon
                   x: 10
-                  y: 32
+                  y: 38
                   width: 300
                   text: ""
-                  text_font: mdi_weather
+                  text_font: mdi_weather_xl
                   text_color: 0x555577
                   text_align: center
               - label:
                   id: lbl_fc3_cond
                   x: 10
-                  y: 75
+                  y: 120
                   width: 300
-                  height: 30
+                  height: 32
                   text: "--"
-                  text_font: roboto_18
+                  text_font: roboto_24
                   text_color: 0x444466
                   text_align: center
                   long_mode: dot
               - label:
-                  id: lbl_fc3_temp
+                  id: lbl_fc3_temp_min
                   x: 10
-                  y: 112
-                  width: 300
+                  y: 158
+                  width: 120
                   text: "--°C"
-                  text_font: roboto_36
-                  text_color: 0x1A1840
+                  text_font: roboto_24
+                  text_color: 0x2266CC
+                  text_align: right
+              - label:
+                  x: 133
+                  y: 158
+                  width: 44
+                  text: " bis"
+                  text_font: roboto_24
+                  text_color: 0x9090AA
                   text_align: center
+              - label:
+                  id: lbl_fc3_temp
+                  x: 177
+                  y: 158
+                  width: 123
+                  text: "--°C"
+                  text_font: roboto_24
+                  text_color: 0xCC4422
+                  text_align: left
 
         # Navigationspunkte
         - button:
