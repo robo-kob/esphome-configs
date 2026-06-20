@@ -49,7 +49,8 @@ esp32:
       CONFIG_SPIRAM_RODATA: "y"
       # LVGL auf Core 1, WiFi bleibt auf Core 0
       CONFIG_ESP_MAIN_TASK_AFFINITY_CPU1: "y"
-      # Compiler auf Geschwindigkeit optimieren
+      # Compiler auf Geschwindigkeit optimieren (-O2). Braucht beim Bauen viel
+      # RAM (cc1plus ~2-4GB fuer main.cpp) -> HAOS-VM entsprechend dimensioniert.
       CONFIG_COMPILER_OPTIMIZATION_PERF: "y"
 
 psram:
@@ -145,6 +146,10 @@ globals:
     type: uint32_t
     restore_value: no
     initial_value: '0'
+  - id: was_playing
+    type: bool
+    restore_value: no
+    initial_value: 'false'
   - id: mute_active
     type: bool
     restore_value: no
@@ -163,6 +168,81 @@ globals:
     initial_value: 'false'
 
 sensor:
+  # ── Batterie: Spannung vom CH32V003 -> Prozent + Lade-/Level-Icon ──────────
+  # Der CH32V003 misst die Akkuspannung ueber den Onboard-Teiler (ref 9.9V).
+  - platform: waveshare_io_ch32v003
+    waveshare_io_ch32v003_id: waveshare_io_hub
+    id: batt_voltage
+    name: "Akkuspannung"
+    reference_voltage: 9.9
+    entity_category: diagnostic
+    device_class: voltage
+    unit_of_measurement: "V"
+    accuracy_decimals: 2
+    # Glaettung gegen ADC-Rauschen (sonst springt der %-Wert in der flachen
+    # Kennlinien-Mitte um mehrere Prozent). Median ueber die letzten Messungen.
+    filters:
+      - median:
+          window_size: 9
+          send_every: 3
+          send_first_at: 3
+
+  # Spannung -> Prozent (Li-Ion Kennlinie); eigene HA-Entitaet + Display-Update
+  - platform: template
+    id: batt_percent
+    name: "Akku"
+    device_class: battery
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: |-
+      float v = id(batt_voltage).state;
+      if (isnan(v) || v < 2.5f || v > 5.0f) return {};
+      const float vs[] = {3.30f,3.50f,3.60f,3.70f,3.75f,3.85f,3.95f,4.05f,4.20f};
+      const float ps[] = {0.0f, 10.0f,20.0f,35.0f,50.0f,65.0f,80.0f,90.0f,100.0f};
+      if (v <= vs[0]) return 0.0f;
+      if (v >= vs[8]) return 100.0f;
+      for (int i = 0; i < 8; i++)
+        if (v < vs[i+1]) { float f=(v-vs[i])/(vs[i+1]-vs[i]); return ps[i]+f*(ps[i+1]-ps[i]); }
+      return 100.0f;
+    on_value:
+      - lvgl.label.update:
+          id: lbl_batt_pct
+          text: !lambda |-
+            char buf[8]; snprintf(buf, sizeof(buf), "%.0f%%", x); return std::string(buf);
+      - lvgl.label.update:
+          id: lbl_batt_icon
+          text: !lambda |-
+            // Ladeerkennung per Spannung (Board liefert kein echtes CHG-Signal)
+            if (id(batt_voltage).state >= 4.15f) return std::string("\U000F0084"); // laedt
+            if (x >= 95) return std::string("\U000F0079");
+            if (x >= 85) return std::string("\U000F0082");
+            if (x >= 75) return std::string("\U000F0081");
+            if (x >= 65) return std::string("\U000F0080");
+            if (x >= 55) return std::string("\U000F007F");
+            if (x >= 45) return std::string("\U000F007E");
+            if (x >= 35) return std::string("\U000F007D");
+            if (x >= 25) return std::string("\U000F007C");
+            if (x >= 15) return std::string("\U000F007B");
+            if (x >= 5)  return std::string("\U000F007A");
+            return std::string("\U000F008E");
+      - lvgl.label.update:
+          id: lbl_batt_icon
+          text_color: !lambda |-
+            if (id(batt_voltage).state >= 4.15f) return lv_color_hex(0x2266CC); // laedt: blau
+            if (x >= 50) return lv_color_hex(0x33A055);
+            if (x >= 25) return lv_color_hex(0xE0A000);
+            if (x >= 10) return lv_color_hex(0xE06600);
+            return lv_color_hex(0xCC2222);
+      - lvgl.label.update:
+          id: lbl_batt_pct
+          text_color: !lambda |-
+            if (id(batt_voltage).state >= 4.15f) return lv_color_hex(0x2266CC);
+            if (x >= 50) return lv_color_hex(0x33A055);
+            if (x >= 25) return lv_color_hex(0xE0A000);
+            if (x >= 10) return lv_color_hex(0xE06600);
+            return lv_color_hex(0xCC2222);
+
   - platform: homeassistant
     id: mxn10_media_duration
     entity_id: media_player.streamer_lossles_mxn10
@@ -371,6 +451,16 @@ text_sensor:
     entity_id: media_player.streamer_lossles_mxn10
     internal: true
     on_value:
+      # Fortschritt rebasen: aktuelle (interpolierte) Position einfrieren und
+      # Timer neu starten -> Pausenzeit wird nie mitgezaehlt (kein Sprung).
+      - lambda: |-
+          float pos = id(local_position_s);
+          if (id(was_playing)) {
+            pos += (millis() - id(local_position_ts)) / 1000.0f;
+          }
+          id(local_position_s) = pos;
+          id(local_position_ts) = millis();
+          id(was_playing) = (x == "playing");
       - if:
           condition:
             lambda: return x == "unavailable" || x.empty();
@@ -785,6 +875,12 @@ font:
     size: 22
     bpp: 4
     glyphs: "󰋺󰔏󱐋󰶛󱤃"
+  # MDI Batterie-Icons (28px): Ladestand + Lade-Symbol (oben rechts)
+  - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
+    id: mdi_battery_28
+    size: 28
+    bpp: 4
+    glyphs: "󰁹󰂂󰂁󰂀󰁿󰁾󰁽󰁼󰁻󰁺󰂎󰂄"
   # MDI Icons (34px): Wetter-Symbol aktueller Zustand
   - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
     id: mdi_weather
@@ -945,6 +1041,25 @@ lvgl:
   touchscreens:
     - waveshare_touch
   default_font: roboto_24
+  # Batterie-Anzeige oben rechts — auf allen Seiten sichtbar
+  top_layer:
+    widgets:
+      - label:
+          id: lbl_batt_icon
+          x: 922
+          y: 10
+          text: ""
+          text_font: mdi_battery_28
+          text_color: 0x9090AA
+      - label:
+          id: lbl_batt_pct
+          x: 946
+          y: 13
+          width: 78
+          text: "--%"
+          text_font: roboto_24
+          text_color: 0x9090AA
+          text_align: left
   on_idle:
     - timeout: 60s
       then:
@@ -1048,6 +1163,7 @@ lvgl:
             border_width: 2
             pad_all: 0
             clip_corner: true
+            scrollbar_mode: "off"
             widgets:
               - label:
                   id: lbl_cover_sym
