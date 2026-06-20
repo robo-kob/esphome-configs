@@ -8,10 +8,10 @@
 #      touchscreen (gt911), light.lcdbacklight (NUR an/aus, kein PWM),
 #      switch.antiburn (laeuft automatisch wenn Backlight aus)
 #
-# Backlight-Logik (hier definiert):
-#   - AN  wenn jemand zuhause ist
-#   - AUS wenn niemand zuhause
-#   - AUS im naechtlichen Antiburn-Fenster 03:00-03:30 (Antiburn laeuft dann auto)
+# Backlight-Logik (echtes PWM-Dimmen, hier definiert):
+#   - Praesenz im Wohnzimmer -> volle Helligkeit (abends gedaempft)
+#   - keine Praesenz: nach 60s auf 10% dimmen
+#   - keine Praesenz: nach 20min ganz aus (Antiburn laeuft dann automatisch)
 # ══════════════════════════════════════════════════════════════════════════
 
 substitutions:
@@ -21,22 +21,32 @@ substitutions:
   ent_solar_power:  sensor.solarbank_2_e1600_pro_solarleistung
   ent_house_power:  sensor.poweropti_35fd8_lokal_leistung
   ent_weather:      weather.forecast_home
-  # Praesenz: Backlight an, sobald EINE dieser Personen zuhause ist
-  ent_person_1:     person.roland
-  ent_person_2:     person.momo
-  # Raum-Praesenz (Wohnzimmer): leer >10min -> Display aus
+  # Raum-Praesenz (Wohnzimmer): steuert Display an/dimmen/aus
   ent_room_presence: binary_sensor.prasenz_wohnzimmer_presence
   # Briefkasten-Status (HA input_boolean Helper, von Automation gesetzt)
   ent_mailbox:      input_boolean.post_im_briefkasten
-  # Abend-Dark-Mode (kein echtes Dimmen — halbtransparente schwarze Ebene)
-  dim_start_hour:   "21"     # ab dieser Stunde abdunkeln
-  dim_end_hour:     "7"      # ab dieser Stunde wieder hell
-  dim_opacity:      "60%"    # Staerke der Abdunklung (0%=aus ... 100%=schwarz)
+  # Batterie: DIY-Spannungsteiler am "Sensor AD"-Header (P2) = GPIO6 (per Schaltplan)
+  batt_adc_pin:     GPIO6
+  batt_divider:     "2.0"    # 100k/100k Teiler -> Messwert x2 = echte Akkuspannung
+  # ── Helligkeit / Dimmen (echtes PWM, GPIO16 nach Loetbruecke) ────────────
+  bright_day:       "1.0"    # Helligkeit tagsueber bei Praesenz (0.0-1.0)
+  bright_evening:   "0.35"   # Helligkeit abends bei Praesenz
+  bright_dim:       "0.1"    # abgesenkte Helligkeit nach Inaktivitaet
+  dim_after_ms:     "60000"    # 60s ohne Touch -> dimmen
+  off_after_ms:     "1200000"  # 20min ohne Praesenz (und ohne Touch) -> ganz aus
+  dim_start_hour:   "21"     # ab dieser Stunde "abends" (gedaempfte Helligkeit)
+  dim_end_hour:     "7"      # ab dieser Stunde wieder "tagsueber"
 
 packages:
   waveshare:
     url: https://github.com/inytar/waveshare-esp32-s3-touch-lcd-7-esphome
-    files: [ waveshare-esp32-s3-touch-lcd-7.yaml ]
+    files:
+      # Brightness-Variante: PWM-Dimmen ueber GPIO16 (Loetbruecke am Backlight-Pad)
+      - path: waveshare-esp32-s3-touch-lcd-7-brightness.yaml
+        vars:
+          backlight_brightness_pin: "GPIO16"
+          initial_brightness: "0.8"
+          min_power: "0.1"    # untere Grenze, sonst ist das Display zu dunkel
     # refresh: 1min   # Default ist 1d. Nur zum Debuggen verkuerzen.
 
 esphome:
@@ -48,8 +58,6 @@ esphome:
         - lvgl.label.update:
             id: lbl_mailbox_icon
             text: !lambda 'return std::string("\U000F06EE");'  # mdi:mailbox
-        - script.execute: update_backlight
-        - script.execute: update_dim
 
 # PSRAM: Die Package stellt 120MHz octal (experimentell) ein — auf diesem
 # ESP32-S3 rev0.2 fuehrt das zu Boot-Crash + OTA-Rollback. Auf stabile
@@ -71,79 +79,80 @@ wifi:
   power_save_mode: none
   # Erst-Upload nach Umbenennung: direkt an die aktuelle IP (mDNS kennt den
   # neuen Namen noch nicht). Kann nach dem ersten erfolgreichen Flash bleiben.
-  use_address: 192.168.1.105
+  use_address: 192.168.1.98
   ap:
     ssid: "Waveshare 7 Fallback"
     password: "12345678"
 
 captive_portal:
 
-# ── Zeit (fuer naechtliches Antiburn-Fenster) ──────────────────────────────
+# Zentraler Helligkeitsregler (alle 250ms):
+#   - < 60s seit letztem Touch            -> volle Helligkeit (Tag/Abend)
+#   - >= 60s ohne Touch                   -> dimmen
+#   - >= 20min ohne Praesenz UND Touch    -> ganz aus (Antiburn laeuft auto)
+# Touch setzt LVGLs Inaktivitaet auf 0 -> naechster Tick macht sofort hell.
+interval:
+  - interval: 250ms
+    then:
+      - lambda: |-
+          uint32_t now = millis();
+          uint32_t idle = lv_disp_get_inactive_time(NULL);            // ms seit letztem Touch
+          uint32_t pres_ago = id(present) ? 0u : (now - id(present_off_ms));
+          float target;
+          if (idle >= ${off_after_ms}u && pres_ago >= ${off_after_ms}u) {
+            target = -1.0f;                            // aus
+          } else if (idle >= ${dim_after_ms}u) {
+            target = (float) ${bright_dim};            // gedimmt
+          } else {
+            target = (float) ${bright_day};            // voll (tagsueber)
+            auto t = id(homeassistant_time).now();
+            if (t.is_valid()) {
+              int h = t.hour, s = ${dim_start_hour}, e = ${dim_end_hour};
+              bool evening = (s > e) ? (h >= s || h < e) : (h >= s && h < e);
+              if (evening) target = (float) ${bright_evening};
+            }
+          }
+          // nur bei Aenderung anwenden (kein Befehls-Spam)
+          if (target > id(applied_bright) - 0.001f && target < id(applied_bright) + 0.001f) return;
+          id(applied_bright) = target;
+          if (target < 0.0f) {
+            id(lcdbacklight_brightness)->turn_off().perform();
+          } else {
+            auto c = id(lcdbacklight_brightness)->turn_on();
+            c.set_brightness(target);
+            c.perform();
+          }
+
+# ── Zeit (fuer Abend-Helligkeit Tag/Nacht, vom Helligkeitsregler genutzt) ──
 time:
   - platform: homeassistant
     id: homeassistant_time
-    on_time_sync:
-      # Sobald Zeit von HA da ist: Zustand korrekt setzen
-      - script.execute: update_backlight
-      - script.execute: update_dim
-    on_time:
-      # 03:00 Antiburn-Fenster beginnt -> Backlight aus (Antiburn laeuft auto)
-      - seconds: 0
-        minutes: 0
-        hours: 3
-        then:
-          - script.execute: update_backlight
-      # 03:30 Fenster vorbei -> ggf. wieder an (falls jemand zuhause)
-      - seconds: 0
-        minutes: 30
-        hours: 3
-        then:
-          - script.execute: update_backlight
-      # Abend-Dark-Mode an
-      - seconds: 0
-        minutes: 0
-        hours: ${dim_start_hour}
-        then:
-          - script.execute: update_dim
-      # Abend-Dark-Mode aus
-      - seconds: 0
-        minutes: 0
-        hours: ${dim_end_hour}
-        then:
-          - script.execute: update_dim
 
 globals:
-  - id: roland_home
-    type: bool
-    restore_value: no
-    initial_value: 'true'   # bis HA meldet: Screen an
-  - id: momo_home
-    type: bool
-    restore_value: no
-    initial_value: 'false'
-  - id: lr_present
+  - id: present
     type: bool
     restore_value: no
     initial_value: 'true'   # Wohnzimmer als "belegt" annehmen bis HA meldet
+  - id: present_off_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'      # millis() als Praesenz zuletzt auf "leer" wechselte
+  - id: applied_bright
+    type: float
+    restore_value: no
+    initial_value: '-99'    # zuletzt gesetzte Helligkeit (-1=aus); erzwingt 1. Anwendung
 
-# ── Raum-Praesenz Wohnzimmer (10-Min-Nachlauf) ─────────────────────────────
+# ── Raum-Praesenz Wohnzimmer (steuert Helligkeit) ──────────────────────────
 binary_sensor:
   - platform: homeassistant
     id: lr_presence
     entity_id: ${ent_room_presence}
     internal: true
     on_state:
-      - if:
-          condition:
-            lambda: 'return x;'
-          then:
-            # jemand im Wohnzimmer -> Timer stoppen, sofort an
-            - script.stop: lr_empty_timer
-            - lambda: 'id(lr_present) = true;'
-            - script.execute: update_backlight
-          else:
-            # Wohnzimmer leer -> 10-Min-Countdown starten
-            - script.execute: lr_empty_timer
+      # Nur Status + Zeitpunkt des Leerwerdens merken; Helligkeit macht der Regler
+      - lambda: |-
+          if (id(present) && !x) id(present_off_ms) = millis();
+          id(present) = x;
 
   # ── Briefkasten: Post-Status (input_boolean) -> Kachel rot/gruen ──────────
   - platform: homeassistant
@@ -170,52 +179,6 @@ binary_sensor:
             - lvgl.label.update: { id: lbl_mailbox_cap, text_color: 0x88A088 }
             - lvgl.label.update: { id: lbl_mailbox_icon, text_color: 0x6BA368 }
             - lvgl.label.update: { id: lbl_mailbox_txt, text: "leer", text_color: 0x6B8E6B }
-
-# ── Backlight-Entscheidung ─────────────────────────────────────────────────
-script:
-  - id: lr_empty_timer
-    mode: restart
-    then:
-      - delay: 10min
-      - lambda: 'id(lr_present) = false;'
-      - script.execute: update_backlight
-
-  # Abend-Dark-Mode: Overlay je nach Uhrzeit ein/aus
-  - id: update_dim
-    then:
-      - if:
-          condition:
-            lambda: |-
-              auto t = id(homeassistant_time).now();
-              if (!t.is_valid()) return false;
-              int h = t.hour;
-              int s = ${dim_start_hour};
-              int e = ${dim_end_hour};
-              // Fenster ueber Mitternacht (z.B. 21 -> 7)
-              if (s > e) return (h >= s || h < e);
-              return (h >= s && h < e);
-          then:
-            - lvgl.widget.update: { id: dim_overlay, hidden: false }
-          else:
-            - lvgl.widget.update: { id: dim_overlay, hidden: true }
-
-  - id: update_backlight
-    then:
-      - if:
-          condition:
-            lambda: |-
-              // Naechtliches Antiburn-Fenster 03:00-03:30 -> aus
-              auto t = id(homeassistant_time).now();
-              if (t.is_valid()) {
-                int mins = t.hour * 60 + t.minute;
-                if (mins >= 180 && mins < 210) return false;
-              }
-              // an wenn jemand zuhause UND Wohnzimmer in den letzten 10min belegt war
-              return (id(roland_home) || id(momo_home)) && id(lr_present);
-          then:
-            - light.turn_on: lcdbacklight
-          else:
-            - light.turn_off: lcdbacklight
 
 # ══════════════════════════════════════════════════════════════════════════
 # Fonts
@@ -282,6 +245,12 @@ font:
     size: 44
     bpp: 4
     glyphs: "󰛮"
+  # MDI Batterie-Icons (26px) fuer Ladestandsanzeige
+  - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
+    id: mdi_battery_26
+    size: 26
+    bpp: 4
+    glyphs: "󰁹󰂂󰂁󰂀󰁿󰁾󰁽󰁼󰁻󰁺󰂎󰂄"
   # MDI Wetter-Icons (46px) fuer Vorhersagekarten (+15%)
   - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
     id: mdi_weather_46
@@ -391,6 +360,77 @@ sensor:
             else snprintf(buf, sizeof(buf), "%.0f W", x);
             return std::string(buf);
 
+  # ── Batterie: Akkuspannung am "Sensor AD"-Header (GPIO6) ──────────────────
+  # WICHTIG: braucht DIY-Spannungsteiler:  Akku+ --[100k]--+--[100k]-- GND,
+  #          Mittelabgriff an den AD-Pin (Header P2). OHNE Teiler = Anzeige Unsinn.
+  - platform: adc
+    pin: ${batt_adc_pin}
+    id: batt_voltage
+    name: "Akkuspannung"
+    entity_category: diagnostic
+    device_class: voltage
+    unit_of_measurement: "V"
+    accuracy_decimals: 2
+    attenuation: 12db
+    update_interval: 30s
+    filters:
+      - multiply: ${batt_divider}
+      - sliding_window_moving_average:
+          window_size: 6
+          send_every: 6
+
+  # Spannung -> Prozent (Li-Ion Kennlinie); eigene HA-Entitaet + Display-Update
+  - platform: template
+    id: batt_percent
+    name: "Akku"
+    device_class: battery
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: |-
+      float v = id(batt_voltage).state;
+      if (isnan(v) || v < 2.5f || v > 4.6f) return {};   // nicht/erst verdrahtet -> kein Wert
+      const float vs[] = {3.30f,3.50f,3.60f,3.70f,3.75f,3.85f,3.95f,4.05f,4.20f};
+      const float ps[] = {0.0f, 10.0f,20.0f,35.0f,50.0f,65.0f,80.0f,90.0f,100.0f};
+      if (v <= vs[0]) return 0.0f;
+      if (v >= vs[8]) return 100.0f;
+      for (int i = 0; i < 8; i++)
+        if (v < vs[i+1]) { float f=(v-vs[i])/(vs[i+1]-vs[i]); return ps[i]+f*(ps[i+1]-ps[i]); }
+      return 100.0f;
+    on_value:
+      - lvgl.label.update:
+          id: lbl_batt_pct
+          text: !lambda |-
+            char buf[8]; snprintf(buf, sizeof(buf), "%.0f%%", x); return std::string(buf);
+      - lvgl.label.update:
+          id: lbl_batt_icon
+          text: !lambda |-
+            if (x >= 95) return std::string("\U000F0079");
+            if (x >= 85) return std::string("\U000F0082");
+            if (x >= 75) return std::string("\U000F0081");
+            if (x >= 65) return std::string("\U000F0080");
+            if (x >= 55) return std::string("\U000F007F");
+            if (x >= 45) return std::string("\U000F007E");
+            if (x >= 35) return std::string("\U000F007D");
+            if (x >= 25) return std::string("\U000F007C");
+            if (x >= 15) return std::string("\U000F007B");
+            if (x >= 5)  return std::string("\U000F007A");
+            return std::string("\U000F008E");
+      - lvgl.label.update:
+          id: lbl_batt_icon
+          text_color: !lambda |-
+            if (x >= 50) return lv_color_hex(0x33A055); // gruen
+            if (x >= 25) return lv_color_hex(0xE0A000); // gelb
+            if (x >= 10) return lv_color_hex(0xE06600); // orange
+            return lv_color_hex(0xCC2222);              // rot
+      - lvgl.label.update:
+          id: lbl_batt_pct
+          text_color: !lambda |-
+            if (x >= 50) return lv_color_hex(0x33A055);
+            if (x >= 25) return lv_color_hex(0xE0A000);
+            if (x >= 10) return lv_color_hex(0xE06600);
+            return lv_color_hex(0xCC2222);
+
   # Heute Tageshoechst/-tief
   - platform: homeassistant
     id: today_temp_max_sensor
@@ -474,22 +514,6 @@ sensor:
             char buf[16]; snprintf(buf, sizeof(buf), "%.0f°", x); return std::string(buf);
 
 text_sensor:
-  # ── Praesenz: person.* Status ("home" = zuhause) ─────────────────────────
-  - platform: homeassistant
-    id: person_roland
-    entity_id: ${ent_person_1}
-    internal: true
-    on_value:
-      - lambda: 'id(roland_home) = (x == "home");'
-      - script.execute: update_backlight
-  - platform: homeassistant
-    id: person_momo
-    entity_id: ${ent_person_2}
-    internal: true
-    on_value:
-      - lambda: 'id(momo_home) = (x == "home");'
-      - script.execute: update_backlight
-
   # Aktuelles Wetter -> Bedingung + Icon
   - platform: homeassistant
     id: weather_state_sensor
@@ -626,23 +650,6 @@ text_sensor:
 # ══════════════════════════════════════════════════════════════════════════
 lvgl:
   default_font: roboto_24
-  # Abend-Dark-Mode: halbtransparente Ebene ueber allem (Touch faellt durch)
-  top_layer:
-    widgets:
-      - obj:
-          id: dim_overlay
-          x: 0
-          y: 0
-          width: 800
-          height: 480
-          bg_color: 0x000000
-          bg_opa: ${dim_opacity}
-          border_width: 0
-          radius: 0
-          pad_all: 0
-          scrollbar_mode: "off"
-          clickable: false
-          hidden: true
   pages:
     - id: dashboard
       bg_color: 0xEEEBF8
@@ -752,6 +759,23 @@ lvgl:
             pad_all: 0
             scrollbar_mode: "off"
             widgets:
+              # Batterie-Anzeige oben rechts in der Ecke
+              - label:
+                  id: lbl_batt_icon
+                  x: 205
+                  y: 10
+                  text: ""
+                  text_font: mdi_battery_26
+                  text_color: 0x9090AA
+              - label:
+                  id: lbl_batt_pct
+                  x: 234
+                  y: 14
+                  width: 44
+                  text: "--%"
+                  text_font: roboto_18
+                  text_color: 0x9090AA
+                  text_align: right
               - label:
                   x: 18
                   y: 14
