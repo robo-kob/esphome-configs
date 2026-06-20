@@ -5,11 +5,26 @@ esphome:
     board_build.flash_mode: dio
 
   on_boot:
-    priority: 800
-    then:
-      - output.set_level:
-          id: backlight_pwm
-          level: 100%
+    - priority: 800
+      then:
+        - output.set_level:
+            id: backlight_pwm
+            level: 100%
+    - priority: -100
+      then:
+        - lvgl.page.show: page_offline
+        - lvgl.label.update:
+            id: lbl_play_pause
+            text: !lambda return std::string(LV_SYMBOL_PLAY);
+        - lvgl.label.update:
+            id: lbl_prev
+            text: !lambda return std::string(LV_SYMBOL_PREV);
+        - lvgl.label.update:
+            id: lbl_next
+            text: !lambda return std::string(LV_SYMBOL_NEXT);
+        - lvgl.label.update:
+            id: lbl_cover_sym
+            text: !lambda return std::string(LV_SYMBOL_AUDIO);
 
 esp32:
   board: esp32-s3-devkitc-1
@@ -29,10 +44,6 @@ psram:
 logger:
 
 globals:
-  - id: last_touch_ms
-    type: uint32_t
-    restore_value: no
-    initial_value: '0'
   - id: local_position_s
     type: float
     restore_value: no
@@ -71,28 +82,33 @@ online_image:
     url: "http://192.168.1.33:8123/"
     format: jpeg
     type: RGB565
-    resize: 155x155
+    resize: 196x196
     on_download_finished:
       - globals.set:
           id: cover_loaded
           value: 'true'
-      - component.update: wt32_display
+      - lvgl.widget.show: img_cover
+      - lvgl.widget.hide: lbl_cover_sym
+      - lvgl.image.update:
+          id: img_cover
+          src: album_cover
     on_error:
       - globals.set:
           id: cover_loaded
           value: 'false'
-      - component.update: wt32_display
+      - lvgl.widget.hide: img_cover
+      - lvgl.widget.show: lbl_cover_sym
 
 sensor:
   - platform: homeassistant
-    id: mxn10_media_duration
-    entity_id: media_player.streamer_lossles_mxn10
+    id: prebox_media_duration
+    entity_id: media_player.prebox
     attribute: media_duration
     internal: true
 
   - platform: homeassistant
-    id: mxn10_media_position
-    entity_id: media_player.streamer_lossles_mxn10
+    id: prebox_media_position
+    entity_id: media_player.prebox
     attribute: media_position
     internal: true
     on_value:
@@ -102,43 +118,66 @@ sensor:
 
 text_sensor:
   - platform: homeassistant
-    id: mxn10_state
-    entity_id: media_player.streamer_lossles_mxn10
+    id: prebox_state
+    entity_id: media_player.prebox
     internal: true
+    on_value:
+      - if:
+          condition:
+            lambda: return x == "unavailable" || x.empty();
+          then:
+            - lvgl.page.show: page_offline
+          else:
+            - lvgl.page.show: page_player
+            - lvgl.label.update:
+                id: lbl_play_pause
+                text: !lambda |-
+                  return std::string(x == "playing" ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
 
   - platform: homeassistant
-    id: mxn10_title
-    entity_id: media_player.streamer_lossles_mxn10
+    id: prebox_title
+    entity_id: media_player.prebox
     attribute: media_title
     internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_title
+          text: !lambda |-
+            return x.length() > 0 ? x : std::string("Kein Titel");
 
   - platform: homeassistant
-    id: mxn10_artist
-    entity_id: media_player.streamer_lossles_mxn10
+    id: prebox_artist
+    entity_id: media_player.prebox
     attribute: media_artist
     internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_artist
+          text: !lambda |-
+            return x.length() > 0 ? x : std::string("");
 
   - platform: homeassistant
-    id: mxn10_album
-    entity_id: media_player.streamer_lossles_mxn10
+    id: prebox_album
+    entity_id: media_player.prebox
     attribute: media_album_name
     internal: true
+    on_value:
+      - lvgl.label.update:
+          id: lbl_album
+          text: !lambda |-
+            return x;
 
   - platform: homeassistant
-    id: mxn10_source
-    entity_id: media_player.streamer_lossles_mxn10
-    attribute: source
-    internal: true
-
-  - platform: homeassistant
-    id: mxn10_entity_picture
-    entity_id: media_player.streamer_lossles_mxn10
+    id: prebox_entity_picture
+    entity_id: media_player.prebox
     attribute: entity_picture
     internal: true
     on_value:
       - globals.set:
           id: cover_loaded
           value: 'false'
+      - lvgl.widget.hide: img_cover
+      - lvgl.widget.show: lbl_cover_sym
       - lambda: |-
           if (!x.empty()) {
             id(album_cover).set_url(("http://192.168.1.33:8123" + x).c_str());
@@ -158,11 +197,28 @@ output:
       ignore_strapping_warning: true
 
 interval:
-  - interval: 10s
+  - interval: 1s
     then:
-      - output.set_level:
-          id: backlight_pwm
-          level: 100%
+      - lambda: |-
+          if (!id(prebox_media_duration).has_state()) return;
+          float duration = id(prebox_media_duration).state;
+          if (duration <= 0) return;
+
+          float position = id(local_position_s);
+          if (id(prebox_state).has_state() && id(prebox_state).state == "playing") {
+            position += (millis() - id(local_position_ts)) / 1000.0f;
+          }
+          if (position > duration) position = duration;
+          if (position < 0) position = 0;
+
+          int percent = (int)(100.0f * position / duration);
+          lv_bar_set_value(id(progress_bar), percent, LV_ANIM_OFF);
+
+          char buf[12];
+          snprintf(buf, sizeof(buf), "%d:%02d", ((int)position)/60, ((int)position)%60);
+          lv_label_set_text(id(lbl_time_pos), buf);
+          snprintf(buf, sizeof(buf), "%d:%02d", ((int)duration)/60, ((int)duration)%60);
+          lv_label_set_text(id(lbl_time_dur), buf);
 
 spi:
   - type: octal
@@ -182,224 +238,334 @@ spi:
 
 font:
   - file: "gfonts://Roboto"
-    id: roboto_48
-    size: 48
+    id: roboto_28
+    size: 28
+    bpp: 4
+    extras:
+      - file: "gfonts://Roboto"
+        glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
 
   - file: "gfonts://Roboto"
-    id: roboto_32
-    size: 32
-
-  - file: "gfonts://Roboto"
-    id: roboto_24
-    size: 24
+    id: roboto_22
+    size: 22
+    bpp: 4
+    extras:
+      - file: "gfonts://Roboto"
+        glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
 
   - file: "gfonts://Roboto"
     id: roboto_18
     size: 18
+    bpp: 4
+    extras:
+      - file: "gfonts://Roboto"
+        glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
+
+  - file: "gfonts://Roboto"
+    id: roboto_15
+    size: 15
+    bpp: 4
+    extras:
+      - file: "gfonts://Roboto"
+        glyphs: "ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ¡¿"
 
 button:
   - platform: template
-    name: "MXN10 Previous"
-    id: mxn10_previous
+    name: "Prebox Previous"
+    id: prebox_previous
     on_press:
       - homeassistant.action:
           action: media_player.media_previous_track
           data:
-            entity_id: media_player.streamer_lossles_mxn10
+            entity_id: media_player.prebox
 
   - platform: template
-    name: "MXN10 Play Pause"
-    id: mxn10_play_pause
+    name: "Prebox Play Pause"
+    id: prebox_play_pause
     on_press:
       - homeassistant.action:
           action: media_player.media_play_pause
           data:
-            entity_id: media_player.streamer_lossles_mxn10
+            entity_id: media_player.prebox
 
   - platform: template
-    name: "MXN10 Next"
-    id: mxn10_next
+    name: "Prebox Next"
+    id: prebox_next
     on_press:
       - homeassistant.action:
           action: media_player.media_next_track
           data:
-            entity_id: media_player.streamer_lossles_mxn10
-
-  - platform: template
-    name: "Topping Mute"
-    id: topping_mute
-    on_press:
-      - homeassistant.action:
-          action: remote.send_command
-          data:
-            entity_id: remote.universal_remote
-            device: "Topping Pre 90"
-            command: "mute"
-
-  - platform: template
-    name: "Topping Leiser"
-    id: topping_volume_down
-    on_press:
-      - homeassistant.action:
-          action: remote.send_command
-          data:
-            entity_id: remote.universal_remote
-            device: "Topping Pre 90"
-            command: "volume_down"
-
-  - platform: template
-    name: "Topping Lauter"
-    id: topping_volume_up
-    on_press:
-      - homeassistant.action:
-          action: remote.send_command
-          data:
-            entity_id: remote.universal_remote
-            device: "Topping Pre 90"
-            command: "volume_up"
-
-  - platform: template
-    name: "Topping Input"
-    id: topping_input_toggle
-    on_press:
-      - homeassistant.action:
-          action: remote.send_command
-          data:
-            entity_id: remote.universal_remote
-            device: "Topping Pre 90"
-            command: "input_rca"
+            entity_id: media_player.prebox
 
 touchscreen:
   - platform: ft63x6
     id: wt32_touch
     interrupt_pin: GPIO7
     reset_pin: GPIO39
-    transform:
-      swap_xy: true
-      mirror_y: true
     on_touch:
-      - lambda: |-
-          uint32_t now = millis();
-          if (now - id(last_touch_ms) < 300) {
-            return;
-          }
-          id(last_touch_ms) = now;
-
-          int x = touch.x;
-          int y = touch.y;
-
-          // Play/Pause oben links
-          if (x >= 0 && x <= 130 && y >= 0 && y <= 75) {
-            id(mxn10_play_pause).press();
-            return;
-          }
-
-          // Input oben rechts
-          if (x >= 350 && x <= 480 && y >= 0 && y <= 75) {
-            id(topping_input_toggle).press();
-            return;
-          }
-
-          // Untere Bedienleiste
-          if (y >= 265 && y <= 320) {
-            if (x >= 0 && x <= 120) {
-              id(mxn10_previous).press();
-            } else if (x > 120 && x <= 240) {
-              id(mxn10_next).press();
-            } else if (x > 240 && x <= 360) {
-              id(topping_volume_down).press();
-            } else if (x > 360 && x <= 480) {
-              id(topping_volume_up).press();
-            }
-          }
+      - output.set_level:
+          id: backlight_pwm
+          level: 100%
 
 display:
   - platform: mipi_spi
     id: wt32_display
     model: wt32-sc01-plus
     data_rate: 40MHz
-    rotation: 90
     buffer_size: 25%
-    update_interval: 1s
-    lambda: |-
-      it.fill(Color::BLACK);
+    update_interval: never
+    auto_clear_enabled: false
 
-      // Play/Pause oben links
-      if (id(mxn10_state).has_state()) {
-        if (id(mxn10_state).state == "playing") {
-          it.filled_rectangle(30, 10, 10, 32, Color::WHITE);
-          it.filled_rectangle(50, 10, 10, 32, Color::WHITE);
-        } else {
-          for (int i = 0; i < 34; i++) {
-            int half_height = (34 - i) / 2;
-            it.line(30 + i, 10 + 16 - half_height, 30 + i, 10 + 16 + half_height, Color::WHITE);
-          }
-        }
-      } else {
-        it.print(30, 10, id(roboto_24), Color::WHITE, TextAlign::LEFT, "?");
-      }
+lvgl:
+  displays:
+    - wt32_display
+  touchscreens:
+    - wt32_touch
+  default_font: roboto_22
+  bg_color: 0xFFFFFF
+  border_width: 0
+  rotation: 90
 
-      // Input oben rechts
-      it.print(455, 18, id(roboto_24), Color::WHITE, TextAlign::RIGHT, "Input");
+  on_idle:
+    - timeout: 30s
+      then:
+        - output.set_level:
+            id: backlight_pwm
+            level: 15%
+    - timeout: 5min
+      then:
+        - output.set_level:
+            id: backlight_pwm
+            level: 0%
 
-      // Album Cover links (155x155)
-      if (id(cover_loaded)) {
-        it.image(5, 60, id(album_cover));
-      } else {
-        it.rectangle(5, 60, 155, 155, Color(60, 60, 60));
-        it.print(82, 137, id(roboto_18), Color(80, 80, 80), TextAlign::CENTER, "...");
-      }
+  pages:
+    # ══════════════════════════════════════════════════════════════════════
+    # Seite 1: Offline-Anzeige (Prebox nicht verfügbar)
+    # ══════════════════════════════════════════════════════════════════════
+    - id: page_offline
+      bg_color: 0xFFFFFF
+      widgets:
+        - obj:
+            x: 0
+            y: 0
+            width: 480
+            height: 320
+            bg_color: 0xFFFFFF
+            border_width: 0
+            pad_all: 0
+            widgets:
+              - label:
+                  text: !lambda return std::string(LV_SYMBOL_AUDIO);
+                  text_font: montserrat_48
+                  text_color: 0xCCCEE0
+                  align: center
+                  y: -40
+              - label:
+                  text: "Prebox nicht verfügbar"
+                  text_font: roboto_22
+                  text_color: 0x9898B8
+                  text_align: center
+                  align: center
+                  y: 20
+              - label:
+                  text: "Bitte Gerät einschalten"
+                  text_font: roboto_18
+                  text_color: 0xBBBBCC
+                  text_align: center
+                  align: center
+                  y: 50
 
-      // Titel
-      if (id(mxn10_title).has_state() && id(mxn10_title).state.length() > 0) {
-        it.print(320, 80, id(roboto_24), Color::WHITE, TextAlign::CENTER, id(mxn10_title).state.c_str());
-      } else {
-        it.print(320, 80, id(roboto_24), Color::WHITE, TextAlign::CENTER, "Kein Titel");
-      }
+    # ══════════════════════════════════════════════════════════════════════
+    # Seite 2: Mediaplayer
+    # ══════════════════════════════════════════════════════════════════════
+    - id: page_player
+      bg_color: 0xFFFFFF
+      widgets:
 
-      // Artist
-      if (id(mxn10_artist).has_state() && id(mxn10_artist).state.length() > 0) {
-        it.print(320, 120, id(roboto_18), Color::WHITE, TextAlign::CENTER, id(mxn10_artist).state.c_str());
-      } else {
-        it.print(320, 120, id(roboto_18), Color::WHITE, TextAlign::CENTER, "-");
-      }
+          # ── Cover-Karte (rechts, 190x190, abgerundete Ecken) ────────────
+          # Cover: x=282, y=6, 190x190 → Unterkante bei y=196
+          - obj:
+              id: cover_card
+              x: 278
+              y: 6
+              width: 196
+              height: 196
+              radius: 12
+              bg_opa: 0
+              border_width: 0
+              shadow_width: 0
+              shadow_opa: 0
+              outline_width: 0
+              pad_all: 0
+              clip_corner: true
+              widgets:
+                - label:
+                    id: lbl_cover_sym
+                    text: !lambda return std::string(LV_SYMBOL_AUDIO);
+                    text_font: montserrat_48
+                    text_color: 0xAAACCC
+                    align: center
+                - image:
+                    id: img_cover
+                    src: album_cover
+                    align: center
+                    hidden: true
 
-      // Album
-      if (id(mxn10_album).has_state() && id(mxn10_album).state.length() > 0) {
-        it.print(320, 148, id(roboto_18), Color::WHITE, TextAlign::CENTER, id(mxn10_album).state.c_str());
-      }
+          # ── Titel (links oben, scroll bei langem Text) ─────────────────
+          # Linke Spalte: x=8..275 (Breite 267)
+          - label:
+              id: lbl_title
+              x: 8
+              y: 30
+              width: 267
+              height: 38
+              text: "Kein Titel"
+              text_color: 0x1A1830
+              text_font: roboto_28
+              text_align: center
+              long_mode: scroll_circular
 
-      // Quelle
-      if (id(mxn10_source).has_state() && id(mxn10_source).state.length() > 0) {
-        it.printf(165, 176, id(roboto_18), Color::WHITE, TextAlign::LEFT, "Quelle: %s", id(mxn10_source).state.c_str());
-      }
+          # ── Artist ────────────────────────────────────────────────────
+          - label:
+              id: lbl_artist
+              x: 8
+              y: 61
+              width: 267
+              height: 28
+              text: ""
+              text_color: 0x5A5880
+              text_font: roboto_22
+              text_align: center
+              long_mode: dot
 
-      // Fortschrittsbalken
-      if (id(mxn10_media_duration).has_state() && id(mxn10_media_position).has_state()) {
-        float duration = id(mxn10_media_duration).state;
-        float position = id(local_position_s);
-        if (id(mxn10_state).has_state() && id(mxn10_state).state == "playing") {
-          position += (millis() - id(local_position_ts)) / 1000.0f;
-        }
+          # ── Album ─────────────────────────────────────────────────────
+          - label:
+              id: lbl_album
+              x: 8
+              y: 90
+              width: 267
+              height: 22
+              text: ""
+              text_color: 0x9898B8
+              text_font: roboto_18
+              text_align: center
+              long_mode: dot
 
-        if (duration > 0 && position >= 0) {
-          int bar_x = 40, bar_y = 218, bar_w = 400, bar_h = 12;
-          float progress = position / duration;
-          if (progress < 0) progress = 0;
-          if (progress > 1) progress = 1;
-          it.rectangle(bar_x, bar_y, bar_w, bar_h, Color::WHITE);
-          it.filled_rectangle(bar_x, bar_y, (int)(progress * bar_w), bar_h, Color::WHITE);
-          it.printf(40,  243, id(roboto_18), Color::WHITE, TextAlign::LEFT,  "%d:%02d", ((int)position)/60, ((int)position)%60);
-          it.printf(440, 243, id(roboto_18), Color::WHITE, TextAlign::RIGHT, "%d:%02d", ((int)duration)/60, ((int)duration)%60);
-        } else {
-          it.print(240, 222, id(roboto_18), Color::WHITE, TextAlign::CENTER, "Keine Laufzeitdaten");
-        }
-      } else {
-        it.print(240, 222, id(roboto_18), Color::WHITE, TextAlign::CENTER, "Keine Laufzeitdaten");
-      }
+          # ── Fortschrittsbalken (volle Breite, unter Cover) ────────────
+          - bar:
+              id: progress_bar
+              x: 8
+              y: 225
+              width: 464
+              height: 6
+              min_value: 0
+              max_value: 100
+              value: 0
+              bg_color: 0xDDE0F0
+              bg_opa: cover
+              indicator:
+                bg_color: 0x5B8DD9
+                bg_opa: cover
+                radius: 3
+              radius: 3
 
-      // Bedienleiste unten
-      it.print(60,  292, id(roboto_18), Color::WHITE, TextAlign::CENTER, "<<");
-      it.print(180, 292, id(roboto_18), Color::WHITE, TextAlign::CENTER, ">>");
-      it.print(300, 292, id(roboto_18), Color::WHITE, TextAlign::CENTER, "Vol-");
-      it.print(420, 292, id(roboto_18), Color::WHITE, TextAlign::CENTER, "Vol+");
+          # ── Zeit Position ─────────────────────────────────────────────
+          - label:
+              id: lbl_time_pos
+              x: 8
+              y: 237
+              text: "0:00"
+              text_color: 0x9898B8
+              text_font: roboto_15
+
+          # ── Zeit Dauer ────────────────────────────────────────────────
+          - label:
+              id: lbl_time_dur
+              x: 392
+              y: 237
+              width: 80
+              text: "0:00"
+              text_color: 0x9898B8
+              text_font: roboto_15
+              text_align: right
+
+          # ── Buttons (zentriert, kleiner) ───────────────────────────────
+          # Prev(46) | 14px | Play(60) | 14px | Next(46) = 180px
+          # Mitte y = 284. Start x: (480-180)/2 = 150
+          # Prev:  x=150, y=284-23=261
+          # Play:  x=150+46+14=210, y=284-30=254
+          # Next:  x=210+60+14=284, y=261
+
+          # Previous
+          - button:
+              id: btn_prev
+              x: 150
+              y: 261
+              width: 46
+              height: 46
+              bg_color: 0xEEF0FA
+              bg_opa: cover
+              border_width: 2
+              border_color: 0xD0D4EC
+              radius: 23
+              pressed:
+                bg_color: 0xD8DCF4
+              on_click:
+                then:
+                  - button.press: prebox_previous
+              widgets:
+                - label:
+                    id: lbl_prev
+                    text: ""
+                    text_font: montserrat_20
+                    text_color: 0x4A4870
+                    align: center
+
+          # Play / Pause (blauer Akzent, etwas größer als Prev/Next)
+          - button:
+              id: btn_play_pause
+              x: 210
+              y: 254
+              width: 60
+              height: 60
+              bg_color: 0x5B8DD9
+              bg_opa: cover
+              border_width: 0
+              radius: 30
+              pressed:
+                bg_color: 0x3D6EB8
+              on_click:
+                then:
+                  - button.press: prebox_play_pause
+              widgets:
+                - label:
+                    id: lbl_play_pause
+                    text: ""
+                    text_font: montserrat_24
+                    text_color: 0xFFFFFF
+                    align: center
+
+          # Next
+          - button:
+              id: btn_next
+              x: 284
+              y: 261
+              width: 46
+              height: 46
+              bg_color: 0xEEF0FA
+              bg_opa: cover
+              border_width: 2
+              border_color: 0xD0D4EC
+              radius: 23
+              pressed:
+                bg_color: 0xD8DCF4
+              on_click:
+                then:
+                  - button.press: prebox_next
+              widgets:
+                - label:
+                    id: lbl_next
+                    text: ""
+                    text_font: montserrat_20
+                    text_color: 0x4A4870
+                    align: center

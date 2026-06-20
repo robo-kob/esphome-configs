@@ -1,0 +1,6 @@
+# macOS
+.DS_Store
+
+# Fremde Projekte, die nur zufaellig in diesem Ordner liegen
+mahjong/
+netmap/
